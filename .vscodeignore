@@ -1,0 +1,26 @@
+# Quellcode und Konfigurationen ausschließen
+src/**
+**/*.ts
+**/*.map
+**/tsconfig.json
+**/eslint.config.mjs
+.gitignore
+
+# Test- und Build-Artefakte
+.vscode/**
+.vscode-test/**
+.vscode-test.*
+node_modules/**
+out/test/**
+*.vsix
+*.log
+
+# Projektspezifische Dateien
+.github/**
+.yarnrc
+vsc-extension-quickstart.md
+*.lock
+
+# Systemdateien
+.DS_Store
+thumbs.db

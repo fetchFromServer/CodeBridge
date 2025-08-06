@@ -1,0 +1,200 @@
+{
+    "name": "codebridge",
+    "displayName": "CodeBridge",
+    "description": "Build a bridge from AI-generated code to your local workspace.",
+    "version": "1.0.0",
+    "publisher": "fetchFromServer",
+    "icon": "images/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/fetchFromServer/codebridge.git"
+    },
+    "bugs": {
+        "url": "https://github.com/fetchFromServer/codebridge/issues"
+    },
+    "homepage": "https://github.com/fetchFromServer/codebridge#readme",
+    "keywords": [
+        "ai",
+        "llm",
+        "codegen",
+        "code generator",
+        "clipboard",
+        "refactor",
+        "automation"
+    ],
+    "galleryBanner": {
+        "color": "#1e1e1e",
+        "theme": "dark"
+    },
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Other",
+        "Programming Languages"
+    ],
+    "extensionKind": [
+        "workspace"
+    ],
+    "capabilities": {
+        "virtualWorkspaces": true
+    },
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "extension.copyAllContents",
+                "title": "CodeBridge: Copy Contents"
+            },
+            {
+                "command": "extension.copyWithPrompt",
+                "title": "CodeBridge: Copy with AI Prompt",
+                "icon": "$(beaker)"
+            },
+            {
+                "command": "extension.generateFromClipboard",
+                "title": "CodeBridge: Generate Files from Clipboard"
+            }
+        ],
+        "menus": {
+            "explorer/context": [
+                {
+                    "command": "extension.copyAllContents",
+                    "group": "1_codebridge@1"
+                },
+                {
+                    "command": "extension.copyWithPrompt",
+                    "group": "1_codebridge@2"
+                },
+                {
+                    "command": "extension.generateFromClipboard",
+                    "group": "1_codebridge@3"
+                }
+            ]
+        },
+        "keybindings": [
+            {
+                "command": "extension.copyWithPrompt",
+                "key": "ctrl+shift+alt+c",
+                "mac": "cmd+shift+alt+c"
+            }
+        ],
+        "configuration": {
+            "title": "CodeBridge",
+            "properties": {
+                "codeBridge.exclude": {
+                    "type": "array",
+                    "default": [
+                        "**/node_modules",
+                        "**/.git",
+                        "**/.vscode",
+                        "**/dist",
+                        "**/build",
+                        "**/coverage",
+                        "**/*.log",
+                        "**/*.lock",
+                        "**/.DS_Store",
+                        "**/thumbs.db"
+                    ],
+                    "description": "Glob patterns for files/folders to exclude from copy."
+                },
+                "codeBridge.ignoreBinaryFiles": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Skip binary files automatically when copying."
+                },
+                "codeBridge.maxFileSize": {
+                    "type": "number",
+                    "default": 1048576,
+                    "description": "Maximum file size in bytes to copy (default: 1MB)."
+                },
+                "codeBridge.outputFormat": {
+                    "type": "string",
+                    "enum": [
+                        "xml",
+                        "markdown",
+                        "plain"
+                    ],
+                    "default": "markdown",
+                    "description": "Output format for the clipboard. Markdown is generally recommended."
+                },
+                "codeBridge.includeStats": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include file/token statistics in the copied output."
+                },
+                "codeBridge.addPrompt": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Always add the default prompt to the output."
+                },
+                "codeBridge.defaultPrompt": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default prompt to prepend to the copied output."
+                },
+                "codeBridge.customPrompts": {
+                    "type": "object",
+                    "default": {
+                        "Review": "Review this codebase for bugs, security issues, and performance problems:",
+                        "Refactor": "Refactor this code for better maintainability and type safety:",
+                        "Document": "Generate comprehensive documentation for this codebase:",
+                        "Explain": "Explain the architecture and how components interact:",
+                        "Optimize": "Optimize this code for performance:",
+                        "Security": "Audit this code for security vulnerabilities:"
+                    },
+                    "description": "Custom prompt templates for quick access."
+                },
+                "codeBridge.tokenWarningLimit": {
+                    "type": "number",
+                    "default": 100000,
+                    "description": "Warn when the estimated token count of the output exceeds this limit."
+                },
+                "codeBridge.generator.createDirectories": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Auto-create directories when generating files from clipboard."
+                },
+                "codeBridge.generator.overwriteExisting": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Overwrite existing files without asking during file generation."
+                },
+                "codeBridge.generator.defaultExtension": {
+                    "type": "string",
+                    "default": "txt",
+                    "description": "Default file extension for generated files if language is not detected."
+                },
+                "codeBridge.generator.pathCommentPrefixes": {
+                    "type": "array",
+                    "default": [
+                        "//",
+                        "#",
+                        "--",
+                        "/*",
+                        "*",
+                        "<!--",
+                        "%",
+                        "'"
+                    ],
+                    "description": "Comment prefixes used to detect file paths in code blocks."
+                },
+                "codeBridge.generator.intelligentNaming": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Try to extract meaningful names from code (e.g., class names) when no file path is found."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.90.0",
+        "@types/node": "20.x",
+        "typescript": "^5.8.3"
+    }
+}
