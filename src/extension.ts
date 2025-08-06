@@ -55,7 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
     )
     statusBar.command = "extension.copyWithPrompt"
     statusBar.text = "$(beaker) CodeBridge"
-    statusBar.tooltip = "CodeBridge: Copy code with AI prompt"
+    statusBar.tooltip = "CodeBridge: Copy context with AI prompt"
     statusBar.show()
 
     context.subscriptions.push(

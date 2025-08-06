@@ -77,6 +77,13 @@ function parseLlmOutput(
         })
     }
 
+    const prefixes = config.pathCommentPrefixes
+        .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("|")
+    const commentRegex = new RegExp(
+        `^(?:${prefixes})\\s*([\\w\\-.\\\\/]+\\.[\\w]+)`,
+    )
+
     for (let i = 0; i < allCodeBlocks.length; i++) {
         const block = allCodeBlocks[i]
         if (processedContent.has(block.content)) continue
@@ -95,12 +102,7 @@ function parseLlmOutput(
 
         if (!filePath) {
             const firstLine = block.content.split("\n")[0]
-            const prefixes = config.pathCommentPrefixes
-                .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-                .join("|")
-            const commentMatch = firstLine.match(
-                new RegExp(`^(?:${prefixes})\\s*([\\w\\-.\\\\/]+\\.[\\w]+)`),
-            )
+            const commentMatch = firstLine.match(commentRegex)
             if (commentMatch && commentMatch[1]) {
                 filePath = commentMatch[1]
                 block.content = block.content
@@ -158,7 +160,20 @@ async function createFile(
     overwritePolicy: OverwritePolicy,
 ): Promise<"created" | "skipped" | "error"> {
     const cleanPath = fileData.filePath.replace(/\\/g, "/")
+
+    if (cleanPath.includes("..") || path.isAbsolute(cleanPath)) {
+        console.error(`Path Traversal attempt blocked: ${cleanPath}`)
+        return "error"
+    }
+
     const fileUri = vscode.Uri.joinPath(baseDirUri, cleanPath)
+
+    if (!fileUri.fsPath.startsWith(baseDirUri.fsPath)) {
+        console.error(
+            `Path Traversal attempt blocked (escaped root): ${cleanPath}`,
+        )
+        return "error"
+    }
 
     try {
         const fileExists = await vscode.workspace.fs.stat(fileUri).then(
@@ -167,10 +182,11 @@ async function createFile(
         )
 
         if (fileExists) {
-            if (
-                overwritePolicy.value === "skip" ||
-                (overwritePolicy.value === "ask" && !config.overwriteExisting)
-            ) {
+            if (overwritePolicy.value === "skip") {
+                return "skipped"
+            }
+
+            if (overwritePolicy.value === "ask" && !config.overwriteExisting) {
                 const answer = await vscode.window.showWarningMessage(
                     `File exists: ${cleanPath}`,
                     { modal: true },

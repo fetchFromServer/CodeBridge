@@ -1,8 +1,8 @@
 {
     "name": "codebridge",
-    "displayName": "CodeBridge",
-    "description": "Build a bridge from AI-generated code to your local workspace.",
-    "version": "1.0.0",
+    "displayName": "CodeBridge - AI Code Context",
+    "description": "Seamlessly copy project context to any AI chat. Generate files from AI responses. The essential bridge for your AI-driven workflow.",
+    "version": "1.1.0",
     "publisher": "fetchFromServer",
     "icon": "images/icon.png",
     "repository": {
@@ -14,13 +14,35 @@
     },
     "homepage": "https://github.com/fetchFromServer/codebridge#readme",
     "keywords": [
-        "ai",
+        "chatgpt",
+        "claude",
+        "gemini",
+        "copilot",
+        "ai chat",
+        "copy code",
+        "paste code",
+        "ai helper",
+        "perplexity",
+        "copy to ai",
+        "paste from ai",
+        "copy multiple files",
+        "copy folder",
+        "generate files",
+        "ai code",
         "llm",
-        "codegen",
+        "ai assistant",
+        "code to clipboard",
+        "markdown code",
+        "batch copy",
+        "workspace copy",
+        "code export",
+        "ai workflow",
         "code generator",
-        "clipboard",
-        "refactor",
-        "automation"
+        "file generator",
+        "copy project",
+        "ai integration",
+        "code bridge",
+        "quick copy"
     ],
     "galleryBanner": {
         "color": "#1e1e1e",
@@ -33,6 +55,11 @@
         "Other",
         "Programming Languages"
     ],
+    "activationEvents": [
+        "onCommand:extension.copyAllContents",
+        "onCommand:extension.copyWithPrompt",
+        "onCommand:extension.generateFromClipboard"
+    ],
     "extensionKind": [
         "workspace"
     ],
@@ -44,16 +71,16 @@
         "commands": [
             {
                 "command": "extension.copyAllContents",
-                "title": "CodeBridge: Copy Contents"
+                "title": "Copy Files to Clipboard"
             },
             {
                 "command": "extension.copyWithPrompt",
-                "title": "CodeBridge: Copy with AI Prompt",
+                "title": "Copy with AI Prompt",
                 "icon": "$(beaker)"
             },
             {
                 "command": "extension.generateFromClipboard",
-                "title": "CodeBridge: Generate Files from Clipboard"
+                "title": "Create Files from AI Response"
             }
         ],
         "menus": {
@@ -131,19 +158,24 @@
                 "codeBridge.defaultPrompt": {
                     "type": "string",
                     "default": "",
-                    "description": "Default prompt to prepend to the copied output."
+                    "description": "A custom prompt to automatically prepend to every copied output when 'addPrompt' is enabled. Left blank by default to avoid unwanted text."
+                },
+                "codeBridge.useDefaultPrompts": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include the built-in prompt templates. Set to false to only use your own 'customPrompts'."
                 },
                 "codeBridge.customPrompts": {
                     "type": "object",
                     "default": {
-                        "Review": "Review this codebase for bugs, security issues, and performance problems:",
-                        "Refactor": "Refactor this code for better maintainability and type safety:",
-                        "Document": "Generate comprehensive documentation for this codebase:",
-                        "Explain": "Explain the architecture and how components interact:",
-                        "Optimize": "Optimize this code for performance:",
-                        "Security": "Audit this code for security vulnerabilities:"
+                        "Set Conversation Context": "Establish the following content as the complete context for our conversation. Internalize this information, then wait for my specific instructions. Acknowledge with a brief confirmation.",
+                        "Critical Review": "Perform a critical review of this code. Identify bugs, security vulnerabilities, and performance issues. For each finding, specify its severity (Critical/High/Medium/Low), the file/line, and a corrected code snippet.",
+                        "Refactor": "Refactor this code for better readability, maintainability, and adherence to modern design patterns. Prioritize clarity and simplicity.",
+                        "Generate Docs": "Generate comprehensive documentation for this code. Follow the standard format for the language (e.g., JSDoc, Python Docstrings) and include descriptions for classes, methods, parameters, and return values.",
+                        "Explain Architecture": "Provide a high-level explanation of this code's architecture and logic. Describe the role of each major component and how they interact.",
+                        "Analyze Performance": "Analyze this code for performance bottlenecks. Focus on inefficient algorithms, memory usage, and slow operations. Suggest concrete, practical optimizations with code examples."
                     },
-                    "description": "Custom prompt templates for quick access."
+                    "description": "Custom prompt templates for quick access. Defining any prompts here will replace the default list."
                 },
                 "codeBridge.tokenWarningLimit": {
                     "type": "number",

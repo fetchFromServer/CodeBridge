@@ -49,7 +49,7 @@ export function getConfiguration(): CopyConfig {
  */
 function globToRegex(glob: string): RegExp {
     const regex = glob
-        .replace(/[\-\[\]\/\{\}\(\)\+\.\\\^\$\|\#\s]/g, "\\$&")
+        .replace(/[\[\]\/\{\}\(\)\+\.\\\^\$\|\#\s-]/g, "\\$&")
         .replace(/\*\*/g, "(.+)")
         .replace(/\*/g, "([^/]+)")
         .replace(/\?/g, "([^/])")
@@ -82,10 +82,7 @@ async function isBinary(fileUri: vscode.Uri): Promise<boolean> {
     try {
         const fileContents = await vscode.workspace.fs.readFile(fileUri)
         const sample = fileContents.slice(0, 1024)
-        for (let i = 0; i < sample.length; i++) {
-            if (sample[i] === 0) return true
-        }
-        return false
+        return sample.indexOf(0) !== -1
     } catch {
         return false
     }
@@ -139,6 +136,9 @@ export async function collectFileUrisRecursively(
     workspaceRootUri: vscode.Uri,
 ): Promise<vscode.Uri[]> {
     const relativePath = path.relative(workspaceRootUri.fsPath, uri.fsPath)
+    if (relativePath.startsWith("..")) {
+        return []
+    }
     if (relativePath && isIgnored(relativePath, patterns)) {
         return []
     }
@@ -181,40 +181,48 @@ function formatOutput(
     config: CopyConfig,
     prompt?: string,
 ): string {
-    let output = ""
+    const parts: string[] = []
 
     if (prompt || (config.addPrompt && config.defaultPrompt)) {
-        output += `${prompt || config.defaultPrompt}\n\n---\n\n`
+        parts.push(`${prompt || config.defaultPrompt}\n\n---\n\n`)
     }
 
     const statsMarker = "___STATS___"
     if (config.includeStats) {
-        output += statsMarker + "\n\n"
+        parts.push(statsMarker + "\n\n")
     }
 
     switch (config.outputFormat) {
         case "xml":
-            output += config.xmlWrapper.open + "\n"
+            parts.push(config.xmlWrapper.open + "\n")
             files.forEach(file => {
-                output += `<file path="${file.path}">\n${file.content}\n</file>\n\n`
+                parts.push(
+                    `<file path="${file.path}">\n${file.content}\n</file>\n\n`,
+                )
             })
-            output += config.xmlWrapper.close
+            parts.push(config.xmlWrapper.close)
             break
 
         case "markdown":
             files.forEach(file => {
                 const ext = path.extname(file.path).slice(1) || "text"
-                output += `## ${file.path}\n\n${config.markdownCodeBlock}${ext}\n${file.content}\n${config.markdownCodeBlock}\n\n`
+                parts.push(
+                    `## ${file.path}\n\n${config.markdownCodeBlock}${ext}\n${file.content}\n${config.markdownCodeBlock}\n\n`,
+                )
             })
             break
 
         case "plain":
         default:
             files.forEach(file => {
-                output += `// FILE: ${file.path}\n\n${file.content}\n\n---\n\n`
+                parts.push(
+                    `// FILE: ${file.path}\n\n${file.content}\n\n---\n\n`,
+                )
             })
             break
     }
+
+    let output = parts.join("")
 
     if (config.includeStats) {
         const totalChars = output.length - statsMarker.length - 2

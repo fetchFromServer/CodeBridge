@@ -6,12 +6,19 @@ import * as vscode from "vscode"
  */
 export async function selectPrompt(): Promise<string | undefined> {
     const config = vscode.workspace.getConfiguration("codeBridge")
-    const customPrompts = config.get<Record<string, string>>(
-        "customPrompts",
-        {},
-    )
+    const inspection = config.inspect<Record<string, string>>("customPrompts")
 
-    const items = Object.entries(customPrompts).map(([key, value]) => ({
+    let finalPrompts: Record<string, string> = {}
+
+    const userSetValue = inspection?.workspaceValue ?? inspection?.globalValue
+
+    if (userSetValue !== undefined) {
+        finalPrompts = userSetValue
+    } else if (config.get<boolean>("useDefaultPrompts", true)) {
+        finalPrompts = inspection?.defaultValue || {}
+    }
+
+    const items = Object.entries(finalPrompts).map(([key, value]) => ({
         label: key,
         detail: value,
         prompt: value,

@@ -1,43 +1,97 @@
-# CodeBridge
+# CodeBridge: AI Code Context
 
-CodeBridge is a Visual Studio Code extension designed to streamline the developer workflow when interacting with Large Language Models (LLMs). It eliminates the tedious process of manually copying and pasting code snippets by providing a robust, context-aware bridge between your editor and any AI chat interface.
+Copy your entire codebase in 2 clicks. Paste AI responses back as real files.
 
-The core purpose of this tool is to facilitate two primary workflows: gathering sufficient context from your project to provide to an AI, and integrating the AI's generated code back into your project structure seamlessly.
+Stop the copy-paste madness. This extension works with **any AI chat** that supports code blocks.
 
-## Core Features
+## Quick Start
 
-*   **Effortless Context Gathering**: Right-click any file or folder in the Explorer to copy its contents and structure into a single, clean Markdown block. This is ideal for providing context for tasks like code review, refactoring, or documentation generation.
+### Copy Code TO Your AI:
+1. Right-click any file/folder in VS Code
+2. Select **"Copy with AI Prompt"**
+3. Paste in ChatGPT, Claude, or any AI chat
 
-*   **Integrated AI Prompts**: Augment your copied code with predefined or custom prompts. Use the "Copy with AI Prompt" command to select from a list of templates (e.g., "Review this code for security vulnerabilities") or input a unique instruction on the fly.
+### Generate Files FROM Your AI:
+1. Copy the AI's complete response
+2. Right-click where you want the files
+3. Select **"Generate Files from Clipboard"**
+4. Done - files created automatically
 
-*   **Automated File Generation**: Parse a complete code response from an AI model directly from your clipboard. CodeBridge intelligently detects file paths from Markdown headers or code comments and recreates the described file and directory structure within your workspace.
+## The Problem This Solves
 
-*   **Advanced Configuration**: Tailor the extension's behavior to your needs. Configure file exclusion patterns, set the output format (Markdown, XML, or Plain Text), and manage your personal library of custom prompts through the settings.
+You know the drill. You're working with ChatGPT or Claude, and you need to:
+- Copy 10+ files one by one into the chat
+- Manually create each file the AI suggests
+- Keep track of what goes where
+- Waste 30 minutes on pure copy-paste work
 
-*   **Optimized for Performance**: The extension is built with performance in mind, utilizing lazy activation to ensure it has zero impact on VS Code's startup time. It only loads when one of its commands is executed.
+CodeBridge fixes this. Copy entire folders at once. Generate all suggested files instantly.
 
-*   **Remote and Virtual Workspace Ready**: CodeBridge is fully compatible with remote development environments (SSH, Dev Containers) and virtual workspaces (such as github.dev), as it relies on VS Code's native filesystem API.
+## Features
 
-## Usage
+### Send Code to AI
+- Copy single files or entire project folders
+- Automatically formats as clean markdown code blocks
+- Excludes `node_modules`, `.git`, and build folders (configurable)
+- Shows token count to avoid AI limits
+- Access a library of expert-crafted prompts for professional results
 
-### Gathering Code for an AI Assistant
+### Generate Files from AI
+- Paste any AI response containing code blocks
+- Auto-detects file paths from headers like `## src/app.js`
+- Creates folder structure automatically
+- Preview what will be created
+- Handles existing files intelligently
 
-1.  In the VS Code Explorer, right-click on a file or a folder.
-2.  Select **CodeBridge: Copy Contents** for a direct copy, or **CodeBridge: Copy with AI Prompt** to add instructions.
-3.  Paste the resulting formatted text into your AI chat interface.
+### Built-in & Custom Prompts
+The extension comes with a set of professional, built-in prompts for common tasks. You have full control to use them, disable them, or replace them entirely with your own library.
 
-### Integrating AI-Generated Code
-
-1.  Copy the complete code response from the AI model to your clipboard. Ensure the response includes file paths (e.g., `## src/components/Button.tsx`).
-2.  In the VS Code Explorer, right-click on the target directory for the new files.
-3.  Select **CodeBridge: Generate Files from Clipboard**.
-4.  A preview of the files to be created will be displayed. Confirm the operation to proceed.
+- **Set Conversation Context:** Load the entire codebase for complex, multi-step questions.
+- **Critical Review:** Perform a detailed audit for bugs, vulnerabilities, and performance issues.
+- **Refactor:** Improve code structure, readability, and apply modern design patterns.
+- **Generate Docs:** Create comprehensive documentation in standard formats.
+- **Explain Architecture:** Get a high-level overview of the code's structure and logic.
+- **Analyze Performance:** Find and fix performance bottlenecks.
 
 ## Installation
 
-1.  Launch Visual Studio Code.
-2.  Go to the **Extensions** view (`Ctrl+Shift+X`).
-3.  Search for `fetchFromServer.codebridge`.
-4.  Click the **Install** button.
+**From VS Code:**
+1. Open Extensions (`Ctrl+Shift+X`)
+2. Search: **"CodeBridge"**
+3. Install
 
-Alternatively, you can install from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=fetchFromServer.codebridge) or by running the following command in the command palette (`Ctrl+Shift+P`):
+**From Marketplace:**
+[Install from Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=fetchFromServer.codebridge)
+
+## Prompt Configuration
+
+You have two main ways to manage the prompt list:
+
+### 1. Disable Default Prompts
+If you prefer a completely empty list and want to type a custom prompt every time, you can disable the built-in ones in your `settings.json`:
+```json
+"codeBridge.useDefaultPrompts": false
+```
+
+### 2. Replace Default Prompts
+To use your own library of prompts, simply define them in your `settings.json`. **This will completely replace the built-in list.**
+```json
+"codeBridge.customPrompts": {
+    "Translate to Python": "Translate the following code to idiomatic Python, maintaining all functionality.",
+    "Write Unit Tests": "Generate unit tests for this code using Jest, covering all major logic paths and edge cases."
+}
+```
+
+## Keyboard Shortcuts
+
+- **Copy with Prompt:** `Ctrl+Shift+Alt+C` (Mac: `Cmd+Shift+Alt+C`)
+
+You can customize this in VS Code's keyboard settings.
+
+## FAQ
+
+**How do I use only my own prompts?**  
+Define your list in the `codeBridge.customPrompts` setting. This will automatically replace the defaults.
+
+**How do I turn off the built-in prompts without adding my own?**  
+Set `codeBridge.useDefaultPrompts` to `false` in your settings.
