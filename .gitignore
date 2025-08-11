@@ -1,4 +1,6 @@
 .git
+dist
 out
 node_modules
 package-lock.json
+.vscode-test-web

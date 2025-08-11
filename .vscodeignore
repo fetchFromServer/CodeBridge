@@ -1,23 +1,21 @@
-# Quellcode und Konfigurationen ausschließen
+/.vscodeignore
 src/**
-**/*.ts
-**/*.map
-**/tsconfig.json
-**/eslint.config.mjs
+esbuild.js
+tsconfig.json
+eslint.config.mjs
 .gitignore
 
 # Test- und Build-Artefakte
 .vscode/**
 .vscode-test/**
-.vscode-test.*
 node_modules/**
-out/test/**
+out/
 *.vsix
 *.log
+*.map
 
 # Projektspezifische Dateien
 .github/**
-.yarnrc
 vsc-extension-quickstart.md
 *.lock
 

@@ -2,8 +2,24 @@
     "name": "codebridge",
     "displayName": "CodeBridge - AI Code Context",
     "description": "Seamlessly copy project context to any AI chat. Generate files from AI responses. The essential bridge for your AI-driven workflow.",
-    "version": "1.1.0",
+    "version": "2.0.0",
     "publisher": "fetchFromServer",
+    "scripts": {
+        "vscode:prepublish": "npm run package",
+        "compile": "npm-run-all --parallel compile:desktop compile:web",
+        "watch": "npm-run-all --parallel watch:desktop watch:web",
+        "package": "npm-run-all --parallel package:desktop package:web",
+        "compile:desktop": "node esbuild.js --platform=desktop",
+        "watch:desktop": "node esbuild.js --platform=desktop --watch",
+        "package:desktop": "node esbuild.js --platform=desktop --production",
+        "compile:web": "node esbuild.js --platform=web",
+        "watch:web": "node esbuild.js --platform=web --watch",
+        "package:web": "node esbuild.js --platform=web --production",
+        "run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. ."
+    },
+    "engines": {
+        "vscode": "^1.102.0"
+    },
     "icon": "images/icon.png",
     "repository": {
         "type": "git",
@@ -14,51 +30,26 @@
     },
     "homepage": "https://github.com/fetchFromServer/codebridge#readme",
     "keywords": [
+        "ai",
+        "llm",
         "chatgpt",
         "claude",
         "gemini",
         "copilot",
-        "ai chat",
-        "copy code",
-        "paste code",
-        "ai helper",
-        "perplexity",
-        "copy to ai",
-        "paste from ai",
-        "copy multiple files",
-        "copy folder",
-        "generate files",
-        "ai code",
-        "llm",
-        "ai assistant",
-        "code to clipboard",
-        "markdown code",
-        "batch copy",
-        "workspace copy",
-        "code export",
-        "ai workflow",
-        "code generator",
-        "file generator",
-        "copy project",
-        "ai integration",
-        "code bridge",
-        "quick copy"
+        "context",
+        "copy",
+        "paste"
     ],
-    "galleryBanner": {
-        "color": "#1e1e1e",
-        "theme": "dark"
-    },
-    "engines": {
-        "vscode": "^1.90.0"
-    },
     "categories": [
         "Other",
-        "Programming Languages"
+        "Programming Languages",
+        "AI"
     ],
     "activationEvents": [
         "onCommand:extension.copyAllContents",
         "onCommand:extension.copyWithPrompt",
-        "onCommand:extension.generateFromClipboard"
+        "onCommand:extension.generateFromClipboard",
+        "onCommand:extension.copyProjectTree"
     ],
     "extensionKind": [
         "workspace"
@@ -66,49 +57,105 @@
     "capabilities": {
         "virtualWorkspaces": true
     },
-    "main": "./out/extension.js",
+    "main": "./dist/desktop/extension.js",
+    "browser": "./dist/web/extension.js",
+    "devDependencies": {
+        "@types/mocha": "^10.0.10",
+        "@types/vscode": "^1.102.0",
+        "@vscode/test-web": "^0.0.72",
+        "esbuild": "^0.25.8",
+        "glob": "^11.0.3",
+        "mocha": "^11.7.1",
+        "npm-run-all": "^4.1.5",
+        "typescript": "^5.9.2"
+    },
     "contributes": {
         "commands": [
             {
                 "command": "extension.copyAllContents",
-                "title": "Copy Files to Clipboard"
+                "title": "Copy Code",
+                "icon": "$(copy)"
             },
             {
                 "command": "extension.copyWithPrompt",
-                "title": "Copy with AI Prompt",
+                "title": "Copy + AI Prompt",
                 "icon": "$(beaker)"
             },
             {
                 "command": "extension.generateFromClipboard",
-                "title": "Create Files from AI Response"
+                "title": "Generate Files from Clipboard"
+            },
+            {
+                "command": "extension.copyProjectTree",
+                "title": "Copy Tree",
+                "icon": "$(list-tree)"
             }
         ],
         "menus": {
             "explorer/context": [
                 {
                     "command": "extension.copyAllContents",
-                    "group": "1_codebridge@1"
+                    "group": "1_codebridge@1",
+                    "when": "config.codeBridge.commands.enableCopyContents"
                 },
                 {
                     "command": "extension.copyWithPrompt",
-                    "group": "1_codebridge@2"
+                    "group": "1_codebridge@2",
+                    "when": "config.codeBridge.commands.enableCopyWithPrompt"
                 },
                 {
                     "command": "extension.generateFromClipboard",
-                    "group": "1_codebridge@3"
+                    "group": "1_codebridge@3",
+                    "when": "config.codeBridge.commands.enableGenerateFiles"
+                },
+                {
+                    "command": "extension.copyProjectTree",
+                    "group": "1_codebridge@4",
+                    "when": "config.codeBridge.commands.enableProjectTree"
                 }
             ]
         },
         "keybindings": [
             {
                 "command": "extension.copyWithPrompt",
-                "key": "ctrl+shift+alt+c",
-                "mac": "cmd+shift+alt+c"
+                "key": "ctrl+alt+c",
+                "mac": "cmd+alt+c",
+                "when": "config.codeBridge.commands.enableCopyWithPrompt"
+            },
+            {
+                "command": "extension.generateFromClipboard",
+                "key": "ctrl+alt+v",
+                "mac": "cmd+alt+v",
+                "when": "config.codeBridge.commands.enableGenerateFiles"
             }
         ],
         "configuration": {
             "title": "CodeBridge",
             "properties": {
+                "codeBridge.commands.enableCopyContents": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "[Commands] Show 'Copy File Contents' in context menu. When disabled, the command is hidden from the context menu.",
+                    "scope": "resource"
+                },
+                "codeBridge.commands.enableCopyWithPrompt": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "[Commands] Show 'Copy Content with Prompt' in context menu and enable keyboard shortcut (Ctrl+Alt+C). When disabled, both are hidden.",
+                    "scope": "resource"
+                },
+                "codeBridge.commands.enableGenerateFiles": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "[Commands] Show 'Generate Files from Clipboard' in context menu and enable keyboard shortcut (Ctrl+Alt+V). When disabled, both are hidden.",
+                    "scope": "resource"
+                },
+                "codeBridge.commands.enableProjectTree": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "[Commands] Show 'Copy Project Tree' in context menu. When disabled, the command is hidden from the context menu.",
+                    "scope": "resource"
+                },
                 "codeBridge.exclude": {
                     "type": "array",
                     "default": [
@@ -123,110 +170,114 @@
                         "**/.DS_Store",
                         "**/thumbs.db"
                     ],
-                    "description": "Glob patterns for files/folders to exclude from copy."
+                    "description": "[General] Glob patterns for files/folders to exclude from all operations (copy content and project tree).",
+                    "scope": "resource"
                 },
-                "codeBridge.ignoreBinaryFiles": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Skip binary files automatically when copying."
-                },
-                "codeBridge.maxFileSize": {
-                    "type": "number",
-                    "default": 1048576,
-                    "description": "Maximum file size in bytes to copy (default: 1MB)."
-                },
-                "codeBridge.outputFormat": {
-                    "type": "string",
-                    "enum": [
-                        "xml",
-                        "markdown",
-                        "plain"
-                    ],
-                    "default": "markdown",
-                    "description": "Output format for the clipboard. Markdown is generally recommended."
-                },
-                "codeBridge.includeStats": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Include file/token statistics in the copied output."
-                },
-                "codeBridge.addPrompt": {
+                "codeBridge.notifications.disableSuccess": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Always add the default prompt to the output."
+                    "description": "[Notifications] If true, disables all success notification popups (e.g., 'Copied 5 files'). Error messages will still be shown.",
+                    "scope": "resource"
                 },
-                "codeBridge.defaultPrompt": {
-                    "type": "string",
-                    "default": "",
-                    "description": "A custom prompt to automatically prepend to every copied output when 'addPrompt' is enabled. Left blank by default to avoid unwanted text."
-                },
-                "codeBridge.useDefaultPrompts": {
+                "codeBridge.copy.ignoreBinaryFiles": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Include the built-in prompt templates. Set to false to only use your own 'customPrompts'."
+                    "description": "[Copy Content] Skip binary files automatically when copying.",
+                    "scope": "resource"
                 },
-                "codeBridge.customPrompts": {
+                "codeBridge.copy.maxFileSize": {
+                    "type": "number",
+                    "default": 0,
+                    "description": "[Copy Content] Maximum file size in bytes to copy. Set to 0 to disable the size check.",
+                    "scope": "resource"
+                },
+                "codeBridge.copy.includeStats": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "[Copy Content] Include file/line/word statistics in the copied output.",
+                    "scope": "resource"
+                },
+                "codeBridge.copy.lineWarningLimit": {
+                    "type": "number",
+                    "default": 50000,
+                    "description": "[Copy Content] Warn when the output exceeds this many lines. Set to 0 to disable the warning.",
+                    "scope": "resource"
+                },
+                "codeBridge.prompt.addDefault": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "[Prompts] Always add the default prompt to the output when using the simple 'Copy' command.",
+                    "scope": "resource"
+                },
+                "codeBridge.prompt.default": {
+                    "type": "string",
+                    "default": "",
+                    "description": "[Prompts] The default prompt to prepend when 'addDefault' is enabled. Left blank by default to avoid unwanted text.",
+                    "scope": "resource"
+                },
+                "codeBridge.prompt.custom": {
                     "type": "object",
                     "default": {
-                        "Set Conversation Context": "Establish the following content as the complete context for our conversation. Internalize this information, then wait for my specific instructions. Acknowledge with a brief confirmation.",
-                        "Critical Review": "Perform a critical review of this code. Identify bugs, security vulnerabilities, and performance issues. For each finding, specify its severity (Critical/High/Medium/Low), the file/line, and a corrected code snippet.",
-                        "Refactor": "Refactor this code for better readability, maintainability, and adherence to modern design patterns. Prioritize clarity and simplicity.",
-                        "Generate Docs": "Generate comprehensive documentation for this code. Follow the standard format for the language (e.g., JSDoc, Python Docstrings) and include descriptions for classes, methods, parameters, and return values.",
-                        "Explain Architecture": "Provide a high-level explanation of this code's architecture and logic. Describe the role of each major component and how they interact.",
-                        "Analyze Performance": "Analyze this code for performance bottlenecks. Focus on inefficient algorithms, memory usage, and slow operations. Suggest concrete, practical optimizations with code examples."
+                        "Set Context": "You are now analyzing the following codebase. Study its structure, patterns, and dependencies carefully. Confirm understanding with: 'Context loaded. I see [brief summary]. Ready for your questions.'",
+                        "Set Expert Mode": "You are a senior software architect with 20+ years experience. Analyze this codebase with extreme attention to detail. Consider: architecture, performance, security, maintainability, scalability, testing, and documentation. Begin with a high-level assessment, then await specific instructions.",
+                        "Modernize Code": "Refactor this code to the modern standards of its language by updating outdated syntax, replacing legacy asynchronous patterns with modern approaches, migrating from old programming paradigms to contemporary ones, updating deprecated APIs, and introducing or improving static type safety. Apply current best practices and provide a migration guide for any breaking changes.",
+                        "Apply Design Patterns": "Identify where design patterns would improve this code. For each suggestion, describe the current anti-patterns, the suggested pattern (e.g., Factory, Observer, Strategy), provide an implementation example, list the benefits gained, and mention potential drawbacks. Focus on practical improvements, not academic exercises.",
+                        "Optimize Performance": "Optimize this code for production performance. Analyze algorithm optimization (time complexity), memory optimization (space complexity), lazy loading opportunities, memoization candidates, parallel processing potential, database query optimization, and caching strategies. Include benchmark comparisons where possible.",
+                        "Predict Future Issues": "Based on this code, predict future problems. Consider scaling bottlenecks at 10x, 100x, and 1000x load, potential maintenance nightmares in 6 months, likely security vulnerabilities, technical debt accumulation, and team onboarding challenges. Rank the predicted issues by likelihood and impact.",
+                        "Suggest New Features": "Based on this codebase analysis, suggest new features. What features are users likely asking for? What is the logical next evolution of the project? Identify quick wins (less than 1 day implementation), high-impact improvements, and technical debt worth addressing. Provide implementation sketches for your suggestions.",
+                        "Deep Code Review": "Perform a comprehensive code review. For each issue found, rate its severity (Critical, High, Medium, Low), explain the problem in one sentence, show the fixed code, and explain why the fix matters. Organize the findings by severity, from highest to lowest. Be ruthlessly thorough.",
+                        "Hunt for Bugs": "Find every bug, edge case, and potential runtime error in this code. For each issue, specify the line/location, describe what breaks and when, provide reproduction steps, and show the fixed code block. Include subtle bugs others might miss, such as issues with null handling, array bounds, type coercion, async race conditions, and error propagation."
                     },
-                    "description": "Custom prompt templates for quick access. Defining any prompts here will replace the default list."
-                },
-                "codeBridge.tokenWarningLimit": {
-                    "type": "number",
-                    "default": 100000,
-                    "description": "Warn when the estimated token count of the output exceeds this limit."
+                    "description": "[Prompts] Custom prompt templates for quick access via 'Copy with AI Prompt'.",
+                    "scope": "resource"
                 },
                 "codeBridge.generator.createDirectories": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Auto-create directories when generating files from clipboard."
+                    "description": "[File Generator] Auto-create directories when generating files from clipboard.",
+                    "scope": "resource"
                 },
                 "codeBridge.generator.overwriteExisting": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Overwrite existing files without asking during file generation."
+                    "description": "[File Generator] If true, automatically overwrites existing files without any confirmation prompt. This skips the 'Overwrite/Skip' dialog entirely."
+                },
+                "codeBridge.generator.disableFileSelection": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "[File Generator] If true, skips the interactive file selection and generates all detected files automatically."
                 },
                 "codeBridge.generator.defaultExtension": {
                     "type": "string",
                     "default": "txt",
-                    "description": "Default file extension for generated files if language is not detected."
+                    "description": "[File Generator] Default file extension for generated files if language is not detected.",
+                    "scope": "resource"
                 },
-                "codeBridge.generator.pathCommentPrefixes": {
-                    "type": "array",
-                    "default": [
-                        "//",
-                        "#",
-                        "--",
-                        "/*",
-                        "*",
-                        "<!--",
-                        "%",
-                        "'"
-                    ],
-                    "description": "Comment prefixes used to detect file paths in code blocks."
-                },
-                "codeBridge.generator.intelligentNaming": {
+                "codeBridge.tree.includeHidden": {
                     "type": "boolean",
-                    "default": true,
-                    "description": "Try to extract meaningful names from code (e.g., class names) when no file path is found."
+                    "default": false,
+                    "description": "[Project Tree] Include hidden files/folders (those starting with a dot) in the project tree.",
+                    "scope": "resource"
+                },
+                "codeBridge.tree.style": {
+                    "type": "string",
+                    "default": "classic",
+                    "description": "[Project Tree] Controls the visual style of the generated project tree.",
+                    "enum": [
+                        "classic",
+                        "modern",
+                        "minimal",
+                        "markdown"
+                    ],
+                    "enumDescriptions": [
+                        "The original tree style with full connectors (├──, └──, │).",
+                        "A compact tree with connectors but without vertical lines.",
+                        "A highly compact tree using only indentation and suffixes (/).",
+                        "A tree formatted as a Markdown bullet list (*)."
+                    ],
+                    "scope": "resource"
                 }
             }
         }
-    },
-    "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./"
-    },
-    "devDependencies": {
-        "@types/vscode": "^1.90.0",
-        "@types/node": "20.x",
-        "typescript": "^5.8.3"
     }
 }
