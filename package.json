@@ -2,33 +2,9 @@
     "name": "codebridge",
     "displayName": "CodeBridge - AI Code Context",
     "description": "Seamlessly copy project context to any AI chat. Generate files from AI responses. The essential bridge for your AI-driven workflow.",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "publisher": "fetchFromServer",
-    "scripts": {
-        "vscode:prepublish": "npm run package",
-        "compile": "npm-run-all --parallel compile:desktop compile:web",
-        "watch": "npm-run-all --parallel watch:desktop watch:web",
-        "package": "npm-run-all --parallel package:desktop package:web",
-        "compile:desktop": "node esbuild.js --platform=desktop",
-        "watch:desktop": "node esbuild.js --platform=desktop --watch",
-        "package:desktop": "node esbuild.js --platform=desktop --production",
-        "compile:web": "node esbuild.js --platform=web",
-        "watch:web": "node esbuild.js --platform=web --watch",
-        "package:web": "node esbuild.js --platform=web --production",
-        "run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. ."
-    },
-    "engines": {
-        "vscode": "^1.102.0"
-    },
     "icon": "images/icon.png",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/fetchFromServer/codebridge.git"
-    },
-    "bugs": {
-        "url": "https://github.com/fetchFromServer/codebridge/issues"
-    },
-    "homepage": "https://github.com/fetchFromServer/codebridge#readme",
     "keywords": [
         "ai",
         "llm",
@@ -45,20 +21,39 @@
         "Programming Languages",
         "AI"
     ],
-    "activationEvents": [
-        "onCommand:extension.copyAllContents",
-        "onCommand:extension.copyWithPrompt",
-        "onCommand:extension.generateFromClipboard",
-        "onCommand:extension.copyProjectTree"
-    ],
+    "homepage": "https://github.com/fetchFromServer/codebridge#readme",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/fetchFromServer/codebridge.git"
+    },
+    "bugs": {
+        "url": "https://github.com/fetchFromServer/codebridge/issues"
+    },
+    "main": "./dist/desktop/extension.js",
+    "browser": "./dist/web/extension.js",
+    "engines": {
+        "vscode": "^1.102.0"
+    },
     "extensionKind": [
         "workspace"
     ],
     "capabilities": {
         "virtualWorkspaces": true
     },
-    "main": "./dist/desktop/extension.js",
-    "browser": "./dist/web/extension.js",
+    "scripts": {
+        "vscode:prepublish": "npm run package",
+        "compile": "npm-run-all --parallel compile:desktop compile:web",
+        "watch": "npm-run-all --parallel watch:desktop watch:web",
+        "package": "npm-run-all --parallel package:desktop package:web",
+        "compile:desktop": "node esbuild.js --platform=desktop",
+        "watch:desktop": "node esbuild.js --platform=desktop --watch",
+        "package:desktop": "node esbuild.js --platform=desktop --production",
+        "compile:web": "node esbuild.js --platform=web",
+        "watch:web": "node esbuild.js --platform=web --watch",
+        "package:web": "node esbuild.js --platform=web --production",
+        "run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. .",
+        "publish": "vsce publish"
+    },
     "devDependencies": {
         "@types/mocha": "^10.0.10",
         "@types/vscode": "^1.102.0",
@@ -69,6 +64,12 @@
         "npm-run-all": "^4.1.5",
         "typescript": "^5.9.2"
     },
+    "activationEvents": [
+        "onCommand:extension.copyAllContents",
+        "onCommand:extension.copyWithPrompt",
+        "onCommand:extension.generateFromClipboard",
+        "onCommand:extension.copyProjectTree"
+    ],
     "contributes": {
         "commands": [
             {
@@ -132,6 +133,23 @@
         "configuration": {
             "title": "CodeBridge",
             "properties": {
+                "codeBridge.exclude": {
+                    "type": "array",
+                    "default": [
+                        "**/node_modules",
+                        "**/.git",
+                        "**/.vscode",
+                        "**/dist",
+                        "**/build",
+                        "**/coverage",
+                        "**/*.log",
+                        "**/*.lock",
+                        "**/.DS_Store",
+                        "**/thumbs.db"
+                    ],
+                    "description": "[General] Glob patterns for files/folders to exclude from all operations (copy content and project tree).",
+                    "scope": "resource"
+                },
                 "codeBridge.commands.enableCopyContents": {
                     "type": "boolean",
                     "default": true,
@@ -154,23 +172,6 @@
                     "type": "boolean",
                     "default": true,
                     "description": "[Commands] Show 'Copy Project Tree' in context menu. When disabled, the command is hidden from the context menu.",
-                    "scope": "resource"
-                },
-                "codeBridge.exclude": {
-                    "type": "array",
-                    "default": [
-                        "**/node_modules",
-                        "**/.git",
-                        "**/.vscode",
-                        "**/dist",
-                        "**/build",
-                        "**/coverage",
-                        "**/*.log",
-                        "**/*.lock",
-                        "**/.DS_Store",
-                        "**/thumbs.db"
-                    ],
-                    "description": "[General] Glob patterns for files/folders to exclude from all operations (copy content and project tree).",
                     "scope": "resource"
                 },
                 "codeBridge.notifications.disableSuccess": {
@@ -251,6 +252,39 @@
                     "type": "string",
                     "default": "txt",
                     "description": "[File Generator] Default file extension for generated files if language is not detected.",
+                    "scope": "resource"
+                },
+                "codeBridge.generator.pathCommentPrefixes": {
+                    "type": "array",
+                    "default": [
+                        "//",
+                        "#",
+                        "--",
+                        "/*",
+                        "*",
+                        "<!--",
+                        "%",
+                        "'"
+                    ],
+                    "description": "[File Generator] Comment prefixes to strip when detecting file paths in code blocks.",
+                    "scope": "resource"
+                },
+                "codeBridge.generator.openFencePattern": {
+                    "type": "string",
+                    "default": "^[ \\t]*```([^\\s`]+)?[ \\t]*$",
+                    "description": "[File Generator] Regex pattern for detecting opening code fence. Must have optional capture group 1 for language token.",
+                    "scope": "resource"
+                },
+                "codeBridge.generator.closeFencePattern": {
+                    "type": "string",
+                    "default": "^[ \\t]*```[ \\t]*$",
+                    "description": "[File Generator] Regex pattern for detecting closing code fence.",
+                    "scope": "resource"
+                },
+                "codeBridge.generator.filePathPattern": {
+                    "type": "string",
+                    "default": "(?:^|[\\s*#:/<_-])((?:[a-zA-Z0-9._-]+(?:[\\\\/]))*[a-zA-Z0-9._-]+\\.[a-zA-Z0-9_]+)",
+                    "description": "[File Generator] Regex pattern for extracting file paths. Must have capture group 1 for the path.",
                     "scope": "resource"
                 },
                 "codeBridge.tree.includeHidden": {

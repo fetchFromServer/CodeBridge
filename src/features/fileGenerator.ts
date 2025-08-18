@@ -2,7 +2,7 @@ import * as vscode from "vscode"
 import { Logger, StatusBarManager, getConfig, posixPath } from "../utils"
 
 /**
- * Configuration settings for the file generator feature.
+ * Configuration for the file generator
  */
 interface GeneratorConfig {
     createDirectories: boolean
@@ -11,10 +11,13 @@ interface GeneratorConfig {
     defaultExtension: string
     pathCommentPrefixes: string[]
     disableSuccessNotifications: boolean
+    openFencePattern: string
+    closeFencePattern: string
+    filePathPattern: string
 }
 
 /**
- * Represents a file to be created, including its path and content.
+ * Represents a file to be created
  */
 interface FileData {
     filePath: string
@@ -22,137 +25,371 @@ interface FileData {
 }
 
 /**
- * Defines the policy for handling existing files.
+ * Policy for handling existing files during generation
  */
 type OverwritePolicy = {
     value: "ask" | "overwrite" | "skip"
 }
 
 /**
- * Parses the output from an LLM to extract file paths and code blocks.
- * @param llmOutput The raw string output from the language model.
- * @param config The generator configuration.
- * @returns An array of FileData objects.
+ * Language to file extension mapping
+ */
+const LANG_MAP: Record<string, { ext?: string; special?: "dockerfile" }> = {
+    js: { ext: ".js" },
+    javascript: { ext: ".js" },
+    mjs: { ext: ".mjs" },
+    cjs: { ext: ".cjs" },
+    jsx: { ext: ".jsx" },
+    ts: { ext: ".ts" },
+    tsx: { ext: ".tsx" },
+    typescript: { ext: ".ts" },
+    html: { ext: ".html" },
+    css: { ext: ".css" },
+    scss: { ext: ".scss" },
+    less: { ext: ".less" },
+    json: { ext: ".json" },
+    jsonc: { ext: ".json" },
+    yaml: { ext: ".yaml" },
+    yml: { ext: ".yml" },
+    ini: { ext: ".ini" },
+    toml: { ext: ".toml" },
+    sh: { ext: ".sh" },
+    bash: { ext: ".sh" },
+    shell: { ext: ".sh" },
+    powershell: { ext: ".ps1" },
+    ps1: { ext: ".ps1" },
+    py: { ext: ".py" },
+    python: { ext: ".py" },
+    rb: { ext: ".rb" },
+    ruby: { ext: ".rb" },
+    php: { ext: ".php" },
+    go: { ext: ".go" },
+    rs: { ext: ".rs" },
+    rust: { ext: ".rs" },
+    c: { ext: ".c" },
+    h: { ext: ".h" },
+    cpp: { ext: ".cpp" },
+    cxx: { ext: ".cpp" },
+    cc: { ext: ".cpp" },
+    cplusplus: { ext: ".cpp" },
+    hpp: { ext: ".hpp" },
+    cs: { ext: ".cs" },
+    csharp: { ext: ".cs" },
+    java: { ext: ".java" },
+    kt: { ext: ".kt" },
+    kotlin: { ext: ".kt" },
+    swift: { ext: ".swift" },
+    rspec: { ext: ".rb" },
+    md: { ext: ".md" },
+    markdown: { ext: ".md" },
+    dockerfile: { special: "dockerfile" },
+    svelte: { ext: ".svelte" },
+    vue: { ext: ".vue" },
+    graphql: { ext: ".graphql" },
+    gql: { ext: ".graphql" },
+    proto: { ext: ".proto" },
+    sql: { ext: ".sql" },
+    hcl: { ext: ".hcl" },
+    tf: { ext: ".tf" },
+    text: { ext: ".txt" },
+    plain: { ext: ".txt" },
+}
+
+/**
+ * Maps a language identifier to its corresponding file extension
+ * @param lang The language identifier (e.g., "typescript", "js")
+ * @returns Object containing the extension or special handling instructions
+ */
+function mapLangToExt(lang?: string): {
+    ext: string | null
+    special?: "dockerfile"
+} {
+    if (!lang) return { ext: null }
+    const key = lang.trim().toLowerCase()
+    const entry = LANG_MAP[key]
+    if (!entry) return { ext: null }
+    if (entry.special === "dockerfile")
+        return { ext: "", special: "dockerfile" }
+    return { ext: entry.ext ?? null }
+}
+
+/**
+ * Represents a detected code block in the input
+ */
+interface CodeBlock {
+    startLine: number
+    endLine: number
+    lang?: string
+    content: string
+}
+
+/**
+ * Extracts code blocks from the input text using configurable fence patterns
+ * @param input The input text containing code blocks
+ * @param config The generator configuration with regex patterns
+ * @param logger Logger instance for error reporting
+ * @returns Array of detected code blocks with line positions and content
+ */
+function extractCodeBlocks(
+    input: string,
+    config: GeneratorConfig,
+    logger: Logger,
+): CodeBlock[] {
+    const lines = input.split(/\r?\n/)
+
+    const defaultOpenPattern = "^[ \\t]*```([^\\s`]+)?[ \\t]*$"
+    const defaultClosePattern = "^[ \\t]*```[ \\t]*$"
+
+    const openPattern = config.openFencePattern || defaultOpenPattern
+    const closePattern = config.closeFencePattern || defaultClosePattern
+
+    let openRe: RegExp
+    let closeRe: RegExp
+
+    try {
+        openRe = new RegExp(openPattern)
+    } catch (e) {
+        logger.error(
+            `Invalid open fence pattern, using default: ${openPattern}`,
+            e,
+        )
+        openRe = new RegExp(defaultOpenPattern)
+    }
+
+    try {
+        closeRe = new RegExp(closePattern)
+    } catch (e) {
+        logger.error(
+            `Invalid close fence pattern, using default: ${closePattern}`,
+            e,
+        )
+        closeRe = new RegExp(defaultClosePattern)
+    }
+
+    const blocks: CodeBlock[] = []
+    let i = 0
+
+    while (i < lines.length) {
+        let open: RegExpExecArray | null = null
+        try {
+            open = openRe.exec(lines[i])
+        } catch (e) {
+            logger.error(`Error executing open fence pattern at line ${i}`, e)
+            i++
+            continue
+        }
+
+        if (!open) {
+            i++
+            continue
+        }
+
+        const lang = open[1]
+        const startLine = i
+        let j = i + 1
+
+        while (j < lines.length) {
+            try {
+                if (closeRe.test(lines[j])) break
+            } catch (e) {
+                logger.error(
+                    `Error executing close fence pattern at line ${j}`,
+                    e,
+                )
+                break
+            }
+            j++
+        }
+
+        if (j >= lines.length) {
+            i = startLine + 1
+            continue
+        }
+
+        const content = lines.slice(startLine + 1, j).join("\n")
+        if (content.length > 0) {
+            blocks.push({ startLine, endLine: j, lang, content })
+        }
+        i = j + 1
+    }
+
+    return blocks
+}
+
+/**
+ * Parses LLM output to extract file paths and code blocks
+ * @param llmOutput The raw output from an LLM containing code blocks
+ * @param config The generator configuration
+ * @param logger Logger instance for error reporting
+ * @returns Array of FileData objects ready for file creation
  */
 function parseLlmOutput(
     llmOutput: string,
     config: GeneratorConfig,
+    logger: Logger,
 ): FileData[] {
     const files: FileData[] = []
     const usedNames = new Set<string>()
 
-    const allCodeBlocks: Array<{
-        index: number
-        end: number
-        lang: string
-        content: string
-    }> = []
-    const codeBlockRegex = /```(?:([^\s`]+))?\s*\n([\s\S]*?)```/g
-
-    for (const match of llmOutput.matchAll(codeBlockRegex)) {
-        if (match.index === undefined) continue
-        const lang = match[1] || config.defaultExtension
-        const content = match[2].trim()
-        if (!content) continue
-        allCodeBlocks.push({
-            index: match.index,
-            end: match.index + match[0].length,
-            lang,
-            content,
-        })
-    }
+    const lines = llmOutput.split(/\r?\n/)
+    const blocks = extractCodeBlocks(llmOutput, config, logger)
 
     const cleanLine = (line: string): string => {
         const trimmed = line.trim()
         for (const prefix of config.pathCommentPrefixes) {
-            if (trimmed.startsWith(prefix)) {
+            if (trimmed.startsWith(prefix))
                 return trimmed.slice(prefix.length).trim()
-            }
         }
         return trimmed
     }
 
-    const filePathRegex =
-        /(?:^|[\s*#:/<_-])((?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+\.[a-zA-Z0-9_]+)/
+    const defaultFilePathPattern =
+        "(?:^|[\\s*#:/<_-])((?:[a-zA-Z0-9._-]+(?:[\\\\/]))*[a-zA-Z0-9._-]+\\.[a-zA-Z0-9_]+)"
+    const filePathPattern = config.filePathPattern || defaultFilePathPattern
 
-    let lastBlockEnd = 0
-    for (let i = 0; i < allCodeBlocks.length; i++) {
-        const block = allCodeBlocks[i]
+    let filePathRegex: RegExp
+    try {
+        filePathRegex = new RegExp(filePathPattern)
+    } catch (e) {
+        logger.error(
+            `Invalid file path pattern, using default: ${filePathPattern}`,
+            e,
+        )
+        filePathRegex = new RegExp(defaultFilePathPattern)
+    }
+
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i]
         let filePath: string | null = null
         let finalContent = block.content
+        let extInfo = mapLangToExt(block.lang)
 
-        const lines = block.content.split(/\r?\n/)
-        const firstLine = lines[0]?.trim()
-        if (firstLine) {
-            const cleanedFirstLine = cleanLine(firstLine)
-            const match = cleanedFirstLine.match(filePathRegex)
-            if (match && match[1]) {
-                filePath = match[1]
-                finalContent = lines.slice(1).join("\n").trim()
+        const contentLines = finalContent.split("\n")
+        const firstLine = contentLines[0] ?? ""
+        const firstLineTrim = firstLine.trim()
+
+        if (firstLineTrim) {
+            const cleaned = cleanLine(firstLine)
+            try {
+                const m = cleaned.match(filePathRegex)
+                if (m && m[1]) {
+                    filePath = m[1]
+                    finalContent = contentLines
+                        .slice(1)
+                        .join("\n")
+                        .replace(/^\n/, "")
+                }
+            } catch (e) {
+                logger.error(
+                    `Error matching file path pattern in first line`,
+                    e,
+                )
             }
-        }
 
-        if (!filePath) {
-            const searchSpaceBefore = llmOutput.substring(
-                lastBlockEnd,
-                block.index,
-            )
-            const linesBefore = searchSpaceBefore.trim().split(/\r?\n/)
-            for (let j = linesBefore.length - 1; j >= 0; j--) {
-                const line = linesBefore[j].trim()
-                if (!line) continue
-                const cleanedLine = cleanLine(line)
-                const match = cleanedLine.match(filePathRegex)
-                if (match && match[1]) {
-                    filePath = match[1]
-                    break
+            if (!filePath && !block.lang) {
+                const maybeLang = firstLineTrim.toLowerCase()
+                const mapped = mapLangToExt(maybeLang)
+                if (mapped.ext !== null || mapped.special) {
+                    extInfo = mapped
+                    finalContent = contentLines.slice(1).join("\n")
                 }
             }
         }
 
         if (!filePath) {
-            const tempName = `temp_file_${i + 1}`
-            filePath = `${tempName}.${block.lang}`
+            const prevEnd = i > 0 ? blocks[i - 1].endLine : -1
+
+            for (let j = block.startLine - 1; j > prevEnd; j--) {
+                const line = lines[j]
+                if (!line || !line.trim()) continue
+                const cleaned = cleanLine(line)
+
+                try {
+                    const m = cleaned.match(filePathRegex)
+                    if (m && m[1]) {
+                        filePath = m[1]
+                        break
+                    }
+                    const token = cleaned.split(/\s+/)[0]
+                    const m2 = token.match(filePathRegex)
+                    if (m2 && m2[1]) {
+                        filePath = m2[1]
+                        break
+                    }
+                } catch (e) {
+                    logger.error(
+                        `Error matching file path pattern at line ${j}`,
+                        e,
+                    )
+                }
+            }
+        }
+
+        if (!filePath) {
+            if (extInfo.special === "dockerfile") {
+                filePath = "Dockerfile"
+            } else {
+                const temp = `temp_file_${i + 1}`
+                const ext =
+                    extInfo.ext || `.${config.defaultExtension || "txt"}`
+                filePath = `${temp}${ext}`
+            }
         }
 
         let finalName = filePath.replace(/\\/g, "/")
-        let counter = 1
-        while (usedNames.has(finalName)) {
-            const dir = posixPath.dirname(finalName)
-            const ext = posixPath.extname(finalName)
-            const base = posixPath.basename(finalName, ext)
-            const newBase = `${base}_${counter}`
-            finalName =
-                dir === "."
-                    ? `${newBase}${ext}`
-                    : posixPath.join(dir, `${newBase}${ext}`)
-            counter++
+        finalName = posixPath.normalize(finalName)
+
+        const currentExt = posixPath.extname(finalName)
+        if (!currentExt) {
+            if (extInfo.special === "dockerfile") {
+                const dir = posixPath.dirname(finalName)
+                const base = posixPath.basename(finalName)
+                if (base.toLowerCase() !== "dockerfile") {
+                    finalName =
+                        dir === "."
+                            ? "Dockerfile"
+                            : posixPath.join(dir, "Dockerfile")
+                }
+            } else if (extInfo.ext) {
+                finalName = `${finalName}${extInfo.ext}`
+            }
         }
 
-        files.push({ filePath: finalName, content: finalContent })
-        usedNames.add(finalName)
-        lastBlockEnd = block.end
+        let unique = finalName
+        let counter = 1
+        while (usedNames.has(unique)) {
+            const dir = posixPath.dirname(unique)
+            const ext = posixPath.extname(unique)
+            const base = posixPath.basename(unique, ext)
+            const nextBase = `${base}_${counter++}`
+            unique =
+                dir === "."
+                    ? `${nextBase}${ext}`
+                    : posixPath.join(dir, `${nextBase}${ext}`)
+        }
+
+        files.push({ filePath: unique, content: finalContent })
+        usedNames.add(unique)
     }
+
     return files
 }
 
 /**
- * Recursively ensures that a directory path exists, creating it if necessary.
- * @param directoryUri The URI of the directory to create.
- * @param logger The logger instance.
+ * Recursively ensures a directory exists, creating parent directories as needed
+ * @param directoryUri The URI of the directory to ensure exists
+ * @param logger Logger instance for error reporting
  */
 async function ensureDirectoryExists(
     directoryUri: vscode.Uri,
     logger: Logger,
 ): Promise<void> {
     const parentUri = vscode.Uri.joinPath(directoryUri, "..")
-    if (parentUri.path === directoryUri.path) {
-        return
-    }
+    if (parentUri.path === directoryUri.path) return
 
     try {
         await vscode.workspace.fs.stat(parentUri)
-    } catch (e) {
+    } catch {
         await ensureDirectoryExists(parentUri, logger)
     }
 
@@ -177,13 +414,13 @@ async function ensureDirectoryExists(
 }
 
 /**
- * Creates a single file on disk, handling overwrites and directory creation.
- * @param fileData The file's path and content.
- * @param baseDirUri The base directory where the file will be created.
- * @param config The generator configuration.
- * @param overwritePolicy The current policy for overwriting files.
- * @param logger The logger instance.
- * @returns A status string: "created", "skipped", or "error".
+ * Creates a single file on disk with proper error handling and overwrite policy
+ * @param fileData The file data containing path and content
+ * @param baseDirUri The base directory URI for file creation
+ * @param config The generator configuration
+ * @param overwritePolicy The policy for handling existing files
+ * @param logger Logger instance for error reporting
+ * @returns Status of the file creation operation
  */
 async function createFile(
     fileData: FileData,
@@ -204,9 +441,7 @@ async function createFile(
     try {
         try {
             await vscode.workspace.fs.stat(fileUri)
-            if (overwritePolicy.value === "skip") {
-                return "skipped"
-            }
+            if (overwritePolicy.value === "skip") return "skipped"
             if (overwritePolicy.value === "ask" && !config.overwriteExisting) {
                 const answer = await vscode.window.showWarningMessage(
                     `File exists: ${normalized}`,
@@ -246,11 +481,11 @@ async function createFile(
 }
 
 /**
- * Main command handler for generating files from LLM output in the clipboard.
- * @param llmOutput The string content from the clipboard.
- * @param targetDirectoryUri The directory where files should be created.
- * @param logger The logger instance.
- * @param statusBarManager The status bar manager instance.
+ * Main function to generate files from LLM output in clipboard
+ * @param llmOutput The LLM output containing code blocks
+ * @param targetDirectoryUri The target directory for file generation
+ * @param logger Logger instance for error reporting
+ * @param statusBarManager Status bar manager for UI updates
  */
 export async function generateFilesFromLlmOutput(
     llmOutput: string,
@@ -279,45 +514,61 @@ export async function generateFilesFromLlmOutput(
             "generator.defaultExtension",
             "txt",
         ),
-        pathCommentPrefixes: ["//", "#", "--", "/*", "*", "<!--", "%", "'"],
+        pathCommentPrefixes: getConfig(
+            "codeBridge",
+            "generator.pathCommentPrefixes",
+            ["//", "#", "--", "/*", "*", "<!--", "%", "'"],
+        ),
         disableSuccessNotifications: getConfig(
             "codeBridge",
             "notifications.disableSuccess",
             false,
         ),
+        openFencePattern: getConfig(
+            "codeBridge",
+            "generator.openFencePattern",
+            "^[ \\t]*```([^\\s`]+)?[ \\t]*$",
+        ),
+        closeFencePattern: getConfig(
+            "codeBridge",
+            "generator.closeFencePattern",
+            "^[ \\t]*```[ \\t]*$",
+        ),
+        filePathPattern: getConfig(
+            "codeBridge",
+            "generator.filePathPattern",
+            "(?:^|[\\s*#:/<_-])((?:[a-zA-Z0-9._-]+(?:[\\\\/]))*[a-zA-Z0-9._-]+\\.[a-zA-Z0-9_]+)",
+        ),
     }
-    const allParsedFiles = parseLlmOutput(llmOutput, config)
 
-    if (!allParsedFiles.length) {
+    const parsed = parseLlmOutput(llmOutput, config, logger)
+
+    if (!parsed.length) {
         vscode.window.showWarningMessage("No code blocks found in clipboard.")
         return
     }
 
-    allParsedFiles.sort((a, b) => {
-        const partsA = a.filePath.split("/")
-        const partsB = b.filePath.split("/")
-        const len = Math.min(partsA.length, partsB.length)
-
+    parsed.sort((a, b) => {
+        const pa = a.filePath.split("/")
+        const pb = b.filePath.split("/")
+        const len = Math.min(pa.length, pb.length)
         for (let i = 0; i < len; i++) {
-            const isLastA = i === partsA.length - 1
-            const isLastB = i === partsB.length - 1
-
-            if (isLastA && !isLastB) return 1
-            if (!isLastA && isLastB) return -1
-
-            const comp = partsA[i].localeCompare(partsB[i])
-            if (comp !== 0) return comp
+            const lastA = i === pa.length - 1
+            const lastB = i === pb.length - 1
+            if (lastA && !lastB) return 1
+            if (!lastA && lastB) return -1
+            const cmp = pa[i].localeCompare(pb[i])
+            if (cmp !== 0) return cmp
         }
-
-        return partsA.length - partsB.length
+        return pa.length - pb.length
     })
 
     let filesToCreate: FileData[] = []
 
     if (config.disableFileSelection) {
-        filesToCreate = allParsedFiles
+        filesToCreate = parsed
     } else {
-        const quickPickItems = allParsedFiles.map(file => {
+        const items = parsed.map(file => {
             const dir = posixPath.dirname(file.filePath)
             return {
                 label: file.filePath,
@@ -328,23 +579,20 @@ export async function generateFilesFromLlmOutput(
             }
         })
 
-        const selectedItems = await vscode.window.showQuickPick(
-            quickPickItems,
-            {
-                canPickMany: true,
-                placeHolder: `Found ${allParsedFiles.length} files. Select which ones to generate.`,
-                ignoreFocusOut: true,
-            },
-        )
+        const selected = await vscode.window.showQuickPick(items, {
+            canPickMany: true,
+            placeHolder: `Found ${parsed.length} files. Select which ones to generate.`,
+            ignoreFocusOut: true,
+        })
 
-        if (!selectedItems || selectedItems.length === 0) {
+        if (!selected || selected.length === 0) {
             vscode.window.showInformationMessage("File generation cancelled.")
             return
         }
-        filesToCreate = selectedItems.map(item => item.fileData)
+        filesToCreate = selected.map(i => i.fileData)
     }
 
-    if (filesToCreate.length === 0) {
+    if (!filesToCreate.length) {
         vscode.window.showInformationMessage("No files selected to generate.")
         return
     }
@@ -360,13 +608,13 @@ export async function generateFilesFromLlmOutput(
         )
 
         for (let i = 0; i < filesToCreate.length; i++) {
-            const file = filesToCreate[i]
+            const f = filesToCreate[i]
             statusBarManager.update(
                 "working",
-                `(${i + 1}/${filesToCreate.length}) ${file.filePath}`,
+                `(${i + 1}/${filesToCreate.length}) ${f.filePath}`,
             )
             const status = await createFile(
-                file,
+                f,
                 targetDirectoryUri,
                 config,
                 overwritePolicy,
@@ -376,7 +624,7 @@ export async function generateFilesFromLlmOutput(
             else if (status === "skipped") results.skipped++
             else {
                 results.errors++
-                errorMessages.push(file.filePath)
+                errorMessages.push(f.filePath)
             }
         }
 
@@ -386,7 +634,7 @@ export async function generateFilesFromLlmOutput(
             )
         }
 
-        const parts = []
+        const parts = [] as string[]
         if (results.created > 0) parts.push(`${results.created} created`)
         if (results.skipped > 0) parts.push(`${results.skipped} skipped`)
         if (results.errors > 0) parts.push(`${results.errors} failed`)
