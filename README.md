@@ -1,76 +1,85 @@
 # CodeBridge: AI Code Context
 
-Copy your entire codebase in 2 clicks. Paste AI responses back as real files.
+The essential VS Code extension for AI-driven development. CodeBridge is the fastest way to get your project's context into any AI chat, designed for maximum efficiency and control.
 
-Stop the copy-paste madness. This extension works with **any AI chat** that supports code blocks.
+### Core Features
+-   **Full Project Copying:** Copy entire project folders into any AI chat with one command.
+-   **Advanced Token Optimization:** Drastically reduce token usage with raw code mode, whitespace trimming, and single-line minification.
+-   **Project Tree Formatting:** Copy a clean, visual representation of your project structure for high-level context.
+-   **Custom Prompt Library:** Use a built-in library of expert prompts or define your own for consistent, high-quality results.
 
 ## Quick Start
 
-### Copy Code TO Your AI:
-1.  Right-click any file/folder in VS Code.
+#### 1. Copy Code TO Your AI
+1.  Right-click any file or folder in the VS Code Explorer.
 2.  Select **"Copy + AI Prompt"**.
 3.  Choose a prompt template or enter a custom one.
-4.  Paste the perfectly formatted context into ChatGPT, Claude, or any AI chat.
+4.  Paste the perfectly formatted context into any AI chat.
 
-### Generate Files FROM Your AI:
-1.  Copy the AI's complete response from the chat.
+#### 2. Generate Files from AI Responses (Experimental)
+1.  Copy the AI's complete response, including code blocks.
 2.  Right-click in the VS Code Explorer where you want the files.
 3.  Select **"Generate Files from Clipboard"**.
-4.  Confirm which files to create. Done!
+4.  Review and confirm which files to create.
 
-## The Problem This Solves
-
-You know the drill. You're working with an AI and you need to:
--   Copy 10+ files one by one into the chat.
--   Manually create each file the AI suggests.
--   Keep track of what goes where.
--   Waste 30 minutes on pure copy-paste work.
-
-CodeBridge fixes this. Copy entire folders at once. Generate all suggested files instantly.
-
-## Features
+## Detailed Features
 
 ### Send Code to AI
--   **Flexible Selection:** Copy single files, multiple selected files, or entire project folders.
--   **Clean Formatting:** Automatically formats everything as clean markdown code blocks.
--   **Smart Exclusions:** Ignores `node_modules`, `.git`, and build folders by default (fully configurable).
--   **AI Prompt Library:** Access a library of expert-crafted prompts for professional results, or add your own.
+-   **Flexible Selection:** Copy single files, multiple selections, or entire folders.
+-   **Smart Formatting:** Automatically formats all files as clean, labeled Markdown code blocks.
+-   **Configurable Exclusions:** Ignores `node_modules`, `.git`, and other clutter by default.
+-   **Token Optimization:**
+    -   **Raw Mode:** Copies only code, stripping all formatting, paths, and stats.
+    -   **Whitespace Trimming:** Removes leading whitespace from every line.
+    -   **Single-Line Minification:** Collapses each file into a single line for maximum token savings.
 
-### Generate Files from AI
--   **Universal Parsing:** Paste any AI response containing standard markdown code blocks.
--   **Automatic Path Detection:** Intelligently finds file paths mentioned in headers (`## src/app.js`) or comments (`// path/to/file.ts`).
--   **Folder Creation:** Creates the required folder structure automatically.
--   **Interactive Preview:** Review and select which files to generate before they are created.
+### Project Tree
+-   **One-Click Tree Copy:** Generate a clean project structure tree with the "Copy Tree" command.
+-   **Multiple Styles:** Choose between `classic`, `modern`, `minimal`, and `markdown` tree styles in the settings.
+
+### File Generation (Experimental)
+-   **Universal Parsing:** Works with any AI response that uses standard Markdown code blocks.
+-   **Automatic Path Detection:** Intelligently finds file paths from headers (`## src/app.js`) or comments (`// path/to/file.ts`).
+-   **Automatic Folder Creation:** Creates the required directory structure on the fly.
+-   **Interactive Preview:** Review and select which files to generate before they are written to disk.
 -   **Safe Overwriting:** Asks for confirmation before overwriting existing files.
 
-### Built-in & Custom Prompts
-The extension comes with a set of professional, built-in prompts for common tasks like code reviews, refactoring, and bug hunting. You have full control to use them or replace them entirely with your own library in the VS Code settings.
+## Configuration Reference
+All settings are found under the "CodeBridge" section in VS Code settings.
 
-## Keyboard Shortcuts
+| Setting                                     | Description                                          | Default                    |
+|---------------------------------------------|------------------------------------------------------|----------------------------|
+| **General**                                 |                                                      |                            |
+| `codeBridge.exclude`                        | Glob patterns for files/folders to exclude.          | `["**/node_modules", ...]` |
+| `codeBridge.notifications.disableSuccess`   | Suppress success notifications.                      | `false`                    |
+| **Commands**                                |                                                      |                            |
+| `codeBridge.commands.enable...`             | Show or hide specific commands in the context menu.  | `true`                     |
+| **Copy Content**                            |                                                      |                            |
+| `codeBridge.copy.raw`                       | Copy raw code only, without Markdown formatting.     | `false`                    |
+| `codeBridge.copy.includeStats`              | Prepend file/line/word count statistics.             | `false`                    |
+| `codeBridge.copy.removeLeadingWhitespace`   | Remove leading whitespace from each line.            | `false`                    |
+| `codeBridge.copy.minifyToSingleLine`        | Collapse each file into a single line.               | `false`                    |
+| `codeBridge.copy.codeFence`                 | The string for Markdown code fences.                 | `"` ``` `"`                |
+| `codeBridge.copy.ignoreBinaryFiles`         | Skip binary files when copying.                      | `true`                     |
+| `codeBridge.copy.maxFileSize`               | Max file size in bytes for copying. `0` disables.    | `0`                        |
+| `codeBridge.copy.lineWarningLimit`          | Warn if total lines exceed this limit. `0` disables. | `50000`                    |
+| **Prompts**                                 |                                                      |                            |
+| `codeBridge.prompt.custom`                  | Define your own library of prompt templates.         | `{...}`                    |
+| `codeBridge.prompt.addDefault`              | Always prepend the default prompt to 'Copy Code'.    | `false`                    |
+| `codeBridge.prompt.default`                 | The default prompt to use when the above is enabled. | `""`                       |
+| **Project Tree**                            |                                                      |                            |
+| `codeBridge.tree.style`                     | The visual style of the project tree.                | `classic`                  |
+| `codeBridge.tree.includeHidden`             | Include hidden files/folders (dotfiles) in the tree. | `false`                    |
+| **File Generator (Experimental)**           |                                                      |                            |
+| `codeBridge.generator.createDirectories`    | Automatically create missing directories.            | `true`                     |
+| `codeBridge.generator.overwriteExisting`    | Overwrite existing files without confirmation.       | `false`                    |
+| `codeBridge.generator.disableFileSelection` | Generate all files without a selection prompt.       | `false`                    |
 
--   **Copy with Prompt:** `Ctrl+Alt+C` (Mac: `Cmd+Alt+C`)
--   **Generate from Clipboard:** `Ctrl+Alt+V` (Mac: `Cmd+Alt+V`)
-
-You can customize these in VS Code's keyboard shortcut settings.
-
-## Configuration
-
-All settings can be found under the "CodeBridge" section in VS Code's settings UI or in your `settings.json` file.
-
-Key settings include:
--   `codeBridge.exclude`: Customize the glob patterns for files and folders to ignore.
--   `codeBridge.prompt.custom`: Define your own library of prompts. This will completely replace the built-in list.
--   `codeBridge.tree.style`: Choose the visual style for the "Copy Tree" command (`classic`, `modern`, `minimal`, or `markdown`).
--   `codeBridge.copy.maxFileSize`: Set a file size limit for copying. Set to `0` to disable the limit.
--   `codeBridge.copy.lineWarningLimit`: Set a line limit for the final output to get a confirmation prompt. Set to `0` to disable the warning.
 
 ## FAQ
 
-**How do I use only my own prompts?**  
-Define your list in the `codeBridge.prompt.custom` setting. This will automatically replace the default list.
+**How do I use only my own prompts?**
+Define your list in the `codeBridge.prompt.custom` setting. This will automatically replace the default list. To get an empty prompt list, set it to `{}`.
 
-**How do I get an empty prompt list?**  
-Set `codeBridge.prompt.custom` to an empty object in your settings:
-```json
-"codeBridge.prompt.custom": {}
-```
+**When should I use the token-saving options?**
+They are ideal for large codebases or token-limited models. Be cautious: `minifyToSingleLine` and `removeLeadingWhitespace` can break code in languages where indentation is syntactically important.
