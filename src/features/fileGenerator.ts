@@ -1,39 +1,28 @@
 import * as vscode from "vscode";
 import { Logger, StatusBarManager, getConfig, posixPath } from "../utils";
 
-/**
- * Configuration for the file generator
- */
 interface GeneratorConfig {
-  createDirectories: boolean;
   overwriteExisting: boolean;
   disableFileSelection: boolean;
-  defaultExtension: string;
-  pathCommentPrefixes: string[];
   disableSuccessNotifications: boolean;
-  openFencePattern: string;
-  closeFencePattern: string;
-  filePathPattern: string;
 }
 
-/**
- * Represents a file to be created
- */
+const DEFAULT_EXTENSION = "txt";
+const FENCE_CHARS = ["`", "~"];
+// AI models love to put filenames in comments above the code block.
+const PATH_COMMENT_PREFIXES = ["//", "#", "--", "/*", "*", "<!--", "%", "'"];
+const SIMPLE_PATH_REGEX = /^(\.?[\\\/]?[\w\-\s\.]*[\\\/])*[\w\-\s]+\.[\w]+/;
+
 interface FileData {
   filePath: string;
   content: string;
 }
 
-/**
- * Policy for handling existing files during generation
- */
 type OverwritePolicy = {
   value: "ask" | "overwrite" | "skip";
 };
 
-/**
- * Language to file extension mapping
- */
+// Mapping language hints (e.g. ```javascript) to file extensions.
 const LANG_MAP: Record<string, { ext?: string; special?: "dockerfile" }> = {
   js: { ext: ".js" },
   javascript: { ext: ".js" },
@@ -92,14 +81,9 @@ const LANG_MAP: Record<string, { ext?: string; special?: "dockerfile" }> = {
   hcl: { ext: ".hcl" },
   tf: { ext: ".tf" },
   text: { ext: ".txt" },
-  plain: { ext: ".txt" }
+  plain: { ext: ".txt" },
 };
 
-/**
- * Maps a language identifier to its corresponding file extension
- * @param lang The language identifier (e.g., "typescript", "js")
- * @returns Object containing the extension or special handling instructions
- */
 function mapLangToExt(lang?: string): {
   ext: string | null;
   special?: "dockerfile";
@@ -112,9 +96,6 @@ function mapLangToExt(lang?: string): {
   return { ext: entry.ext ?? null };
 }
 
-/**
- * Represents a detected code block in the input
- */
 interface CodeBlock {
   startLine: number;
   endLine: number;
@@ -122,118 +103,95 @@ interface CodeBlock {
   content: string;
 }
 
-/**
- * Extracts code blocks from the input text using configurable fence patterns
- * @param input The input text containing code blocks
- * @param config The generator configuration with regex patterns
- * @param logger Logger instance for error reporting
- * @returns Array of detected code blocks with line positions and content
- */
-function extractCodeBlocks(input: string, config: GeneratorConfig, logger: Logger): CodeBlock[] {
+// Manual parser for markdown code blocks. We don't use a library here to keep
+// the extension size small and dependencies low.
+function extractCodeBlocks(input: string): CodeBlock[] {
   const lines = input.split(/\r?\n/);
-
-  const defaultOpenPattern = "^[ \\t]*```([^\\s`]+)?[ \\t]*$";
-  const defaultClosePattern = "^[ \\t]*```[ \\t]*$";
-
-  const openPattern = config.openFencePattern || defaultOpenPattern;
-  const closePattern = config.closeFencePattern || defaultClosePattern;
-
-  let openRe: RegExp;
-  let closeRe: RegExp;
-
-  try {
-    openRe = new RegExp(openPattern);
-  } catch (e) {
-    logger.error(`Invalid open fence pattern, using default: ${openPattern}`, e);
-    openRe = new RegExp(defaultOpenPattern);
-  }
-
-  try {
-    closeRe = new RegExp(closePattern);
-  } catch (e) {
-    logger.error(`Invalid close fence pattern, using default: ${closePattern}`, e);
-    closeRe = new RegExp(defaultClosePattern);
-  }
-
   const blocks: CodeBlock[] = [];
-  let i = 0;
 
-  while (i < lines.length) {
-    let open: RegExpExecArray | null = null;
-    try {
-      open = openRe.exec(lines[i]);
-    } catch (e) {
-      logger.error(`Error executing open fence pattern at line ${i}`, e);
-      i++;
-      continue;
-    }
+  let inBlock = false;
+  let startLine = -1;
+  let lang = "";
+  let currentFence = "";
 
-    if (!open) {
-      i++;
-      continue;
-    }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
 
-    const lang = open[1];
-    const startLine = i;
-    let j = i + 1;
+    // Detect start/end of blocks
+    if (FENCE_CHARS.some((char) => trimmed.startsWith(char))) {
+      const match = trimmed.match(/^([`~]{3,})/);
 
-    while (j < lines.length) {
-      try {
-        if (closeRe.test(lines[j])) break;
-      } catch (e) {
-        logger.error(`Error executing close fence pattern at line ${j}`, e);
-        break;
+      if (match) {
+        const fence = match[1];
+
+        if (inBlock) {
+          // Closing fence must match length and char of opening fence
+          if (fence.length >= currentFence.length && fence.charAt(0) === currentFence.charAt(0)) {
+            const content = lines.slice(startLine + 1, i).join("\n");
+            // Filter out empty blocks or artifacts
+            if (content.trim().length > 0 || lines.length > startLine + 1) {
+              blocks.push({ startLine, endLine: i, lang, content });
+            }
+            inBlock = false;
+            lang = "";
+            startLine = -1;
+            currentFence = "";
+          }
+        } else {
+          inBlock = true;
+          startLine = i;
+          currentFence = fence;
+
+          // Extract language info from the same line (e.g. ```typescript)
+          const rawMetadata = trimmed.slice(fence.length).trim();
+          const cleanedMetadata = rawMetadata.replace(/^[`~]+/, "").trim();
+          lang = cleanedMetadata.split(/\s+/)[0];
+        }
       }
-      j++;
     }
-
-    if (j >= lines.length) {
-      i = startLine + 1;
-      continue;
-    }
-
-    const content = lines.slice(startLine + 1, j).join("\n");
-    if (content.length > 0) {
-      blocks.push({ startLine, endLine: j, lang, content });
-    }
-    i = j + 1;
   }
-
   return blocks;
 }
 
-/**
- * Parses LLM output to extract file paths and code blocks
- * @param llmOutput The raw output from an LLM containing code blocks
- * @param config The generator configuration
- * @param logger Logger instance for error reporting
- * @returns Array of FileData objects ready for file creation
- */
-function parseLlmOutput(llmOutput: string, config: GeneratorConfig, logger: Logger): FileData[] {
+// The core magic: tries to figure out what file the AI wants to create
+// by looking at comments above the code block or headers inside it.
+function parseLlmOutput(llmOutput: string): FileData[] {
   const files: FileData[] = [];
   const usedNames = new Set<string>();
-
   const lines = llmOutput.split(/\r?\n/);
-  const blocks = extractCodeBlocks(llmOutput, config, logger);
+
+  const blocks = extractCodeBlocks(llmOutput);
 
   const cleanLine = (line: string): string => {
     const trimmed = line.trim();
-    for (const prefix of config.pathCommentPrefixes) {
+    for (const prefix of PATH_COMMENT_PREFIXES) {
       if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length).trim();
     }
     return trimmed;
   };
 
-  const defaultFilePathPattern = "(?:^|[\\s*#:/<_-])((?:[a-zA-Z0-9._-]+(?:[\\\\/]))*[a-zA-Z0-9._-]+\\.[a-zA-Z0-9_]+)";
-  const filePathPattern = config.filePathPattern || defaultFilePathPattern;
+  const extractPathFromHeader = (line: string): string | null => {
+    let clean = line.replace(/[#*`_"'<>\-]/g, "").trim();
+    // Common AI prefixes like "File: src/main.ts"
+    clean = clean.replace(/^(?:File|Path|Filename|Location):\s*/i, "").trim();
 
-  let filePathRegex: RegExp;
-  try {
-    filePathRegex = new RegExp(filePathPattern);
-  } catch (e) {
-    logger.error(`Invalid file path pattern, using default: ${filePathPattern}`, e);
-    filePathRegex = new RegExp(defaultFilePathPattern);
-  }
+    // Strip stats if the AI copied our own format back to us
+    const statsIndex = clean.indexOf(" [");
+    if (statsIndex !== -1) {
+      clean = clean.substring(0, statsIndex).trim();
+    } else {
+      const parts = clean.split(/\s+/);
+      if (parts.length > 0 && SIMPLE_PATH_REGEX.test(parts[0])) {
+        clean = parts[0];
+      }
+    }
+
+    if (SIMPLE_PATH_REGEX.test(clean)) {
+      return clean;
+    }
+    return null;
+  };
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
@@ -241,64 +199,65 @@ function parseLlmOutput(llmOutput: string, config: GeneratorConfig, logger: Logg
     let finalContent = block.content;
     let extInfo = mapLangToExt(block.lang);
 
-    const contentLines = finalContent.split("\n");
-    const firstLine = contentLines[0] ?? "";
-    const firstLineTrim = firstLine.trim();
-
-    if (firstLineTrim) {
-      const cleaned = cleanLine(firstLine);
-      try {
-        const m = cleaned.match(filePathRegex);
-        if (m && m[1]) {
-          filePath = m[1];
-          finalContent = contentLines.slice(1).join("\n").replace(/^\n/, "");
-        }
-      } catch (e) {
-        logger.error(`Error matching file path pattern in first line`, e);
-      }
-
-      if (!filePath && !block.lang) {
-        const maybeLang = firstLineTrim.toLowerCase();
-        const mapped = mapLangToExt(maybeLang);
-        if (mapped.ext !== null || mapped.special) {
-          extInfo = mapped;
-          finalContent = contentLines.slice(1).join("\n");
-        }
-      }
-    }
-
+    // Strategy 1: Look 1-3 lines ABOVE the block for a filename
     if (!filePath) {
       const prevEnd = i > 0 ? blocks[i - 1].endLine : -1;
-
-      for (let j = block.startLine - 1; j > prevEnd; j--) {
+      for (let j = block.startLine - 1; j > prevEnd && j >= block.startLine - 3; j--) {
         const line = lines[j];
-        if (!line || !line.trim()) continue;
-        const cleaned = cleanLine(line);
-
-        try {
-          const m = cleaned.match(filePathRegex);
-          if (m && m[1]) {
-            filePath = m[1];
-            break;
-          }
-          const token = cleaned.split(/\s+/)[0];
-          const m2 = token.match(filePathRegex);
-          if (m2 && m2[1]) {
-            filePath = m2[1];
-            break;
-          }
-        } catch (e) {
-          logger.error(`Error matching file path pattern at line ${j}`, e);
+        if (!line.trim()) continue;
+        const potentialPath = extractPathFromHeader(line);
+        if (potentialPath) {
+          filePath = potentialPath;
+          break;
         }
       }
     }
 
+    // Strategy 2: Look INSIDE the first line of the block (e.g. // src/index.ts)
+    if (!filePath) {
+      const contentLines = finalContent.split("\n");
+      const firstLine = contentLines[0] ?? "";
+      const firstLineTrim = firstLine.trim();
+
+      if (firstLineTrim) {
+        const cleaned = cleanLine(firstLine);
+
+        let candidate = cleaned;
+        const statsIndex = candidate.indexOf(" [");
+        if (statsIndex !== -1) candidate = candidate.substring(0, statsIndex).trim();
+
+        if (SIMPLE_PATH_REGEX.test(candidate)) {
+          filePath = candidate;
+          // Remove the filename line so it doesn't end up in the code
+          finalContent = contentLines.slice(1).join("\n").replace(/^\n/, "");
+        } else {
+          // Sometimes the first line is just "typescript"
+          if (!block.lang) {
+            const maybeLang = firstLineTrim.toLowerCase();
+            const mapped = mapLangToExt(maybeLang);
+            if (mapped.ext !== null || mapped.special) {
+              extInfo = mapped;
+              finalContent = contentLines.slice(1).join("\n");
+            }
+          }
+        }
+      }
+    }
+
+    // Skip tree structures that might look like code blocks
+    if (!filePath) {
+      if (finalContent.includes("├──") || finalContent.includes("└──") || finalContent.includes("│")) {
+        continue;
+      }
+    }
+
+    // Fallback: Name it temp_file_X if we really can't find a name
     if (!filePath) {
       if (extInfo.special === "dockerfile") {
         filePath = "Dockerfile";
       } else {
         const temp = `temp_file_${i + 1}`;
-        const ext = extInfo.ext || `.${config.defaultExtension || "txt"}`;
+        const ext = extInfo.ext || `.${DEFAULT_EXTENSION}`;
         filePath = `${temp}${ext}`;
       }
     }
@@ -306,6 +265,9 @@ function parseLlmOutput(llmOutput: string, config: GeneratorConfig, logger: Logg
     let finalName = filePath.replace(/\\/g, "/");
     finalName = posixPath.normalize(finalName);
 
+    if (finalName.endsWith("/")) continue;
+
+    // Append extension if missing
     const currentExt = posixPath.extname(finalName);
     if (!currentExt) {
       if (extInfo.special === "dockerfile") {
@@ -319,6 +281,7 @@ function parseLlmOutput(llmOutput: string, config: GeneratorConfig, logger: Logg
       }
     }
 
+    // Handle duplicate filenames in the same output by appending counters
     let unique = finalName;
     let counter = 1;
     while (usedNames.has(unique)) {
@@ -336,24 +299,22 @@ function parseLlmOutput(llmOutput: string, config: GeneratorConfig, logger: Logg
   return files;
 }
 
-/**
- * Recursively ensures a directory exists, creating parent directories as needed
- * @param directoryUri The URI of the directory to ensure exists
- * @param logger Logger instance for error reporting
- */
 async function ensureDirectoryExists(directoryUri: vscode.Uri, logger: Logger): Promise<void> {
   const parentUri = vscode.Uri.joinPath(directoryUri, "..");
+  // Root check
   if (parentUri.path === directoryUri.path) return;
 
   try {
     await vscode.workspace.fs.stat(parentUri);
   } catch {
+    // Recursive creation
     await ensureDirectoryExists(parentUri, logger);
   }
 
   try {
     await vscode.workspace.fs.createDirectory(directoryUri);
   } catch (e) {
+    // Check if it's actually a file blocking the directory creation
     try {
       const stat = await vscode.workspace.fs.stat(directoryUri);
       if (stat.type !== vscode.FileType.Directory) {
@@ -368,15 +329,6 @@ async function ensureDirectoryExists(directoryUri: vscode.Uri, logger: Logger): 
   }
 }
 
-/**
- * Creates a single file on disk with proper error handling and overwrite policy
- * @param fileData The file data containing path and content
- * @param baseDirUri The base directory URI for file creation
- * @param config The generator configuration
- * @param overwritePolicy The policy for handling existing files
- * @param logger Logger instance for error reporting
- * @returns Status of the file creation operation
- */
 async function createFile(
   fileData: FileData,
   baseDirUri: vscode.Uri,
@@ -386,6 +338,7 @@ async function createFile(
 ): Promise<"created" | "skipped" | "error"> {
   const normalized = posixPath.normalize(fileData.filePath);
 
+  // Safety: prevent AI from writing to /etc/passwd or similar via ../../../
   if (normalized.startsWith("..") || normalized.startsWith("/")) {
     logger.error(`Path traversal blocked: ${normalized}`);
     return "error";
@@ -396,6 +349,7 @@ async function createFile(
   try {
     try {
       await vscode.workspace.fs.stat(fileUri);
+      // File exists, check policy
       if (overwritePolicy.value === "skip") return "skipped";
       if (overwritePolicy.value === "ask" && !config.overwriteExisting) {
         const answer = await vscode.window.showWarningMessage(
@@ -418,10 +372,8 @@ async function createFile(
       }
     } catch {}
 
-    if (config.createDirectories) {
-      const dirUri = vscode.Uri.joinPath(fileUri, "..");
-      await ensureDirectoryExists(dirUri, logger);
-    }
+    const dirUri = vscode.Uri.joinPath(fileUri, "..");
+    await ensureDirectoryExists(dirUri, logger);
 
     await vscode.workspace.fs.writeFile(fileUri, new TextEncoder().encode(fileData.content));
     logger.log(`File created successfully: ${fileUri.fsPath}`);
@@ -432,13 +384,6 @@ async function createFile(
   }
 }
 
-/**
- * Main function to generate files from LLM output in clipboard
- * @param llmOutput The LLM output containing code blocks
- * @param targetDirectoryUri The target directory for file generation
- * @param logger Logger instance for error reporting
- * @param statusBarManager Status bar manager for UI updates
- */
 export async function generateFilesFromLlmOutput(
   llmOutput: string,
   targetDirectoryUri: vscode.Uri,
@@ -446,37 +391,19 @@ export async function generateFilesFromLlmOutput(
   statusBarManager: StatusBarManager
 ) {
   const config: GeneratorConfig = {
-    createDirectories: getConfig("codeBridge", "generator.createDirectories", true),
     overwriteExisting: getConfig("codeBridge", "generator.overwriteExisting", false),
     disableFileSelection: getConfig("codeBridge", "generator.disableFileSelection", false),
-    defaultExtension: getConfig("codeBridge", "generator.defaultExtension", "txt"),
-    pathCommentPrefixes: getConfig("codeBridge", "generator.pathCommentPrefixes", [
-      "//",
-      "#",
-      "--",
-      "/*",
-      "*",
-      "<!--",
-      "%",
-      "'"
-    ]),
     disableSuccessNotifications: getConfig("codeBridge", "notifications.disableSuccess", false),
-    openFencePattern: getConfig("codeBridge", "generator.openFencePattern", "^[ \\t]*```([^\\s`]+)?[ \\t]*$"),
-    closeFencePattern: getConfig("codeBridge", "generator.closeFencePattern", "^[ \\t]*```[ \\t]*$"),
-    filePathPattern: getConfig(
-      "codeBridge",
-      "generator.filePathPattern",
-      "(?:^|[\\s*#:/<_-])((?:[a-zA-Z0-9._-]+(?:[\\\\/]))*[a-zA-Z0-9._-]+\\.[a-zA-Z0-9_]+)"
-    )
   };
 
-  const parsed = parseLlmOutput(llmOutput, config, logger);
+  const parsed = parseLlmOutput(llmOutput);
 
   if (!parsed.length) {
     vscode.window.showWarningMessage("No code blocks found in clipboard.");
     return;
   }
 
+  // Sort by depth (folders first-ish) and name to keep the UI list organized
   parsed.sort((a, b) => {
     const pa = a.filePath.split("/");
     const pb = b.filePath.split("/");
@@ -498,19 +425,21 @@ export async function generateFilesFromLlmOutput(
     filesToCreate = parsed;
   } else {
     const items = parsed.map((file) => {
-      const dir = posixPath.dirname(file.filePath);
+      const lineCount = file.content.split(/\r\n|\r|\n/).length;
+      const sizeKB = (file.content.length / 1024).toFixed(1);
+
       return {
         label: file.filePath,
-        description: dir === "." ? "Directory: (root)" : `Directory: ${dir}`,
+        description: `$(list-unordered) ${lineCount} Lines  $(database) ${sizeKB} KB`,
         picked: true,
-        fileData: file
+        fileData: file,
       };
     });
 
     const selected = await vscode.window.showQuickPick(items, {
       canPickMany: true,
       placeHolder: `Found ${parsed.length} files. Select which ones to generate.`,
-      ignoreFocusOut: true
+      ignoreFocusOut: true,
     });
 
     if (!selected || selected.length === 0) {
@@ -545,6 +474,7 @@ export async function generateFilesFromLlmOutput(
     }
 
     if (results.created > 0) {
+      // Trigger VS Code to update the explorer view so the new files show up
       await vscode.commands.executeCommand("workbench.files.action.refreshFilesExplorer");
     }
 

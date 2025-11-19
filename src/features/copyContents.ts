@@ -1,38 +1,31 @@
 import * as vscode from "vscode";
-import { Logger, StatusBarManager, getConfig, getFileExtension, isIgnored } from "../utils";
+import { Logger, StatusBarManager, getConfig, getFileExtension, getGlobalExcludes, isIgnored } from "../utils";
 
-/**
- * Configuration settings for the copy contents feature.
- */
 interface CopyConfig {
   excludePatterns: string[];
-  ignoreBinaryFiles: boolean;
-  maxFileSize: number;
   includeStats: boolean;
-  lineWarningLimit: number;
   disableSuccessNotifications: boolean;
-  addPrompt: boolean;
-  defaultPrompt: string;
+  raw: boolean;
+  maxFileSize: number;
+  lineWarningLimit: number;
+  codeFence: string;
   removeLeadingWhitespace: boolean;
   minifyToSingleLine: boolean;
-  raw: boolean;
-  codeFence: string;
 }
 
-/**
- * Represents the processed content of a single file.
- */
 interface FileContent {
   path: string;
   content: string;
   size: number;
   lines: number;
   words: number;
+  extension: string;
 }
 
-/**
- * A set of file extensions that are commonly considered binary.
- */
+// Hard limit to prevent extension host from crashing on accidental massive file selection
+const SAFETY_MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+// Common binary formats we definitely don't want to cat into a text prompt
 const BINARY_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -108,15 +101,13 @@ const BINARY_EXTENSIONS = new Set([
   ".dat",
   ".pak",
   ".idx",
-  ".lock"
+  ".lock",
 ]);
 
-/**
- * Handles the logic of reading, processing, and caching file contents.
- */
 class FileProcessor {
   private readonly config: CopyConfig;
   private readonly logger: Logger;
+  // Simple memory cache to avoid re-reading files if user spams commands
   private readonly cache = new Map<string, FileContent | null>();
 
   constructor(config: CopyConfig, logger: Logger) {
@@ -124,11 +115,8 @@ class FileProcessor {
     this.logger = logger;
   }
 
-  /**
-   * Entfernt führende Leerzeichen von jeder Zeile in einem String.
-   * @param content Der ursprüngliche String-Inhalt.
-   * @returns Der Inhalt, bei dem von jeder Zeile die führenden Leerzeichen entfernt wurden.
-   */
+  // Saves tokens by stripping indentation. Careful, this can break python indentation
+  // if not consistent, but useful for strict token limits.
   private removeLeadingWhitespaceFromContent(content: string): string {
     return content
       .split("\n")
@@ -136,71 +124,42 @@ class FileProcessor {
       .join("\n");
   }
 
-  /**
-   * Wandelt einen String in eine einzelne Zeile um, indem Zeilenumbrüche ersetzt
-   * und überflüssige Leerzeichen entfernt werden.
-   * @param content Der ursprüngliche String-Inhalt.
-   * @returns Der minifizierte String in einer Zeile.
-   */
   private minifyContentToSingleLine(content: string): string {
     return content
-      .replace(/(\r\n|\n|\r)/gm, " ") // Ersetze alle Zeilenumbrüche durch ein Leerzeichen
-      .replace(/\s+/g, " ") // Ersetze mehrere Leerzeichen durch ein einziges
-      .trim(); // Entferne Leerzeichen am Anfang/Ende
+      .replace(/(\r\n|\n|\r)/gm, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
-  /**
-   * Checks if a file is likely binary.
-   * First checks against a list of known binary extensions.
-   * As a fallback, it tries to decode the file as UTF-8; if it fails, it's considered binary.
-   * @param uri The URI of the file.
-   * @param bytes The file content as a byte array.
-   * @returns True if the file is considered binary, false otherwise.
-   */
+  // Fallback heuristic: if extension check fails, look for null bytes
   private isBinaryFile(uri: vscode.Uri, bytes: Uint8Array): boolean {
     const ext = getFileExtension(uri.path).toLowerCase();
     if (BINARY_EXTENSIONS.has(ext)) {
       return true;
     }
-
     try {
-      const decoder = new TextDecoder("utf-8", { fatal: true });
-      decoder.decode(bytes);
+      // Only check start of file to save performance
+      const checkLength = Math.min(bytes.length, 8000);
+      for (let i = 0; i < checkLength; i++) {
+        if (bytes[i] === 0) return true;
+      }
       return false;
     } catch (e) {
       return true;
     }
   }
 
-  /**
-   * Efficiently counts the number of lines and words in a string.
-   * @param content The string content to analyze.
-   * @returns An object containing the line and word count.
-   */
-  private countLinesAndWords(content: string): {
-    lines: number;
-    words: number;
-  } {
-    if (content.length === 0) {
-      return { lines: 1, words: 0 };
-    }
+  private countLinesAndWords(content: string): { lines: number; words: number } {
+    if (content.length === 0) return { lines: 1, words: 0 };
     const lineMatches = content.match(/\n/g);
     const lines = lineMatches ? lineMatches.length + 1 : 1;
     const words = content.match(/\b[\w']+\b/g)?.length || 0;
     return { lines, words };
   }
 
-  /**
-   * Processes a single file: reads it, checks constraints, and extracts content.
-   * Uses a cache to avoid reprocessing the same file.
-   * @param fileUri The URI of the file to process.
-   * @returns A FileContent object or null if the file is skipped.
-   */
   async processFile(fileUri: vscode.Uri): Promise<FileContent | null> {
     const cacheKey = fileUri.toString();
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey) || null;
-    }
+    if (this.cache.has(cacheKey)) return this.cache.get(cacheKey) || null;
 
     try {
       const stat = await vscode.workspace.fs.stat(fileUri);
@@ -211,14 +170,23 @@ class FileProcessor {
         return null;
       }
 
+      if (stat.size > SAFETY_MAX_FILE_SIZE) {
+        this.logger.log(
+          `Skipping massive file (Safety): ${fileUri.fsPath} (${(stat.size / 1024 / 1024).toFixed(2)}MB)`
+        );
+        this.cache.set(cacheKey, null);
+        return null;
+      }
+
       const fileBytes = await vscode.workspace.fs.readFile(fileUri);
 
-      if (this.config.ignoreBinaryFiles && this.isBinaryFile(fileUri, fileBytes)) {
+      if (this.isBinaryFile(fileUri, fileBytes)) {
         this.logger.log(`Skipping binary file: ${fileUri.fsPath}`);
         this.cache.set(cacheKey, null);
         return null;
       }
 
+      // Using TextDecoder is safer for UTF-8 than raw string conversion
       let content = new TextDecoder("utf-8", { fatal: false }).decode(fileBytes);
 
       if (this.config.minifyToSingleLine) {
@@ -229,13 +197,15 @@ class FileProcessor {
 
       const relativePath = vscode.workspace.asRelativePath(fileUri, false).replace(/\\/g, "/");
       const { lines, words } = this.countLinesAndWords(content);
+      const extension = getFileExtension(relativePath);
 
       const result: FileContent = {
         path: relativePath,
         content,
         size: stat.size,
         lines,
-        words
+        words,
+        extension,
       };
 
       this.cache.set(cacheKey, result);
@@ -247,18 +217,13 @@ class FileProcessor {
     }
   }
 
-  /**
-   * Processes a list of file URIs in parallel chunks.
-   * @param fileUris An array of file URIs to process.
-   * @param progressReporter An object with a report method to update the UI.
-   * @returns A promise that resolves to an array of processed FileContent objects.
-   */
+  // Batch processing to prevent UI freeze when handling thousands of files
   async processFiles(
     fileUris: vscode.Uri[],
     progressReporter: { report: (message: string) => void }
   ): Promise<FileContent[]> {
     const results: FileContent[] = [];
-
+    // Dynamic chunk size based on total count, clamped between 4 and 32
     const optimalChunkSize = Math.min(Math.max(4, Math.floor(fileUris.length / 10)), 32);
 
     for (let i = 0; i < fileUris.length; i += optimalChunkSize) {
@@ -271,24 +236,13 @@ class FileProcessor {
           results.push(result.value);
         }
       }
-
-      const processed = Math.min(i + optimalChunkSize, fileUris.length);
-      progressReporter.report(`Processing ${processed}/${fileUris.length}...`);
+      progressReporter.report(`Processing ${Math.min(i + optimalChunkSize, fileUris.length)}/${fileUris.length}...`);
     }
-
     return results;
   }
 }
 
-/**
- * Recursively collects all file URIs from a given starting URI, respecting ignore patterns.
- * @param uri The starting URI (can be a file or directory).
- * @param patterns An array of glob patterns to ignore.
- * @param workspaceRootUri The root URI of the workspace for relative path calculations.
- * @param logger The logger instance.
- * @param visitedPaths A set to track visited paths and prevent circular recursion.
- * @returns A promise that resolves to an array of file URIs.
- */
+// Recursively find files, respecting exclusions.
 async function collectFileUrisOptimized(
   uri: vscode.Uri,
   patterns: string[],
@@ -297,29 +251,21 @@ async function collectFileUrisOptimized(
   visitedPaths: Set<string> = new Set()
 ): Promise<vscode.Uri[]> {
   const normalizedPath = uri.toString();
-  if (visitedPaths.has(normalizedPath)) {
-    return [];
-  }
+  // Prevent infinite loops with symlinks
+  if (visitedPaths.has(normalizedPath)) return [];
   visitedPaths.add(normalizedPath);
 
   const relativePath = vscode.workspace.asRelativePath(uri, false);
-  if (!uri.path.startsWith(workspaceRootUri.path)) {
-    return [];
-  }
-  if (relativePath && isIgnored(relativePath, patterns)) {
-    return [];
-  }
+
+  // Security check: don't go outside workspace
+  if (!uri.path.startsWith(workspaceRootUri.path)) return [];
+  if (relativePath && isIgnored(relativePath, patterns)) return [];
 
   try {
     const stat = await vscode.workspace.fs.stat(uri);
-
-    if (stat.type === vscode.FileType.File) {
-      return [uri];
-    }
-
+    if (stat.type === vscode.FileType.File) return [uri];
     if (stat.type === vscode.FileType.Directory) {
       const entries = await vscode.workspace.fs.readDirectory(uri);
-
       const directoryPromises = entries
         .filter(([name]) => {
           const childPath = relativePath ? `${relativePath}/${name}` : name;
@@ -327,100 +273,110 @@ async function collectFileUrisOptimized(
         })
         .map(async ([name, type]) => {
           const childUri = vscode.Uri.joinPath(uri, name);
-
-          if (type === vscode.FileType.File) {
-            return [childUri];
-          } else if (type === vscode.FileType.Directory) {
+          if (type === vscode.FileType.File) return [childUri];
+          else if (type === vscode.FileType.Directory)
             return collectFileUrisOptimized(childUri, patterns, workspaceRootUri, logger, visitedPaths);
-          }
           return [];
         });
-
-      const nestedResults = await Promise.all(directoryPromises);
-      return nestedResults.flat();
+      return (await Promise.all(directoryPromises)).flat();
     }
   } catch (error) {
     logger.error(`Could not process ${uri.fsPath}`, error);
   }
-
   return [];
 }
 
-/**
- * Formats the collected file contents into a single string for the clipboard.
- * @param files An array of processed FileContent objects.
- * @param config The current copy configuration.
- * @param prompt An optional AI prompt to prepend to the output.
- * @returns An object containing the final formatted string and total size in bytes.
- */
+// If the code contains backticks (e.g. markdown files), we need to increase the fence size
+// (``` -> ````) to avoid breaking the formatting.
+function getDynamicFence(content: string, defaultFence: string): string {
+  const matches = content.match(/`+/g);
+  if (!matches) return defaultFence;
+  const maxLength = Math.max(...matches.map((m) => m.length));
+  return maxLength >= defaultFence.length ? "`".repeat(maxLength + 1) : defaultFence;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
 function formatOutput(
   files: FileContent[],
-  config: Pick<CopyConfig, "includeStats" | "addPrompt" | "defaultPrompt" | "raw" | "codeFence">,
+  config: Pick<CopyConfig, "includeStats" | "raw" | "codeFence">,
   prompt?: string
-): {
-  output: string;
-  sizeBytes: number;
-} {
+): { output: string; sizeBytes: number } {
   let totalBytes = 0;
-  for (const file of files) {
-    totalBytes += file.size;
-  }
+  for (const file of files) totalBytes += file.size;
 
+  // Raw mode is just concatenation, useful for pure data
   if (config.raw) {
     const contentOutput = files.map((file) => file.content).join("\n\n");
-    return {
-      output: contentOutput,
-      sizeBytes: totalBytes
-    };
+    return { output: contentOutput, sizeBytes: totalBytes };
   }
 
   const chunks: string[] = [];
+  const useDetailedHeaders = config.includeStats;
 
   for (const file of files) {
-    const ext = getFileExtension(file.path).slice(1) || "text";
-    const chunk = `## ${file.path}\n\n${config.codeFence}${ext}\n${file.content}\n${config.codeFence}\n\n`;
+    const ext = file.extension.slice(1) || "text";
+    const fence = getDynamicFence(file.content, config.codeFence);
+
+    let header = `## ${file.path}`;
+
+    if (useDetailedHeaders) {
+      const langName =
+        ext === "ts" ? "TypeScript" : ext === "js" ? "JavaScript" : ext === "py" ? "Python" : ext.toUpperCase();
+
+      header += ` [${langName} | ${file.lines} Lines | ${formatSize(file.size)}]`;
+    }
+
+    const chunk = `${header}\n\n${fence}${ext}\n${file.content}\n${fence}\n\n`;
     chunks.push(chunk);
   }
 
   const contentOutput = chunks.join("").trimEnd();
   const finalParts: string[] = [];
 
-  if (prompt || (config.addPrompt && config.defaultPrompt)) {
-    const promptText = `${prompt || config.defaultPrompt}\n\n---\n\n`;
-    finalParts.push(promptText);
+  if (prompt) {
+    finalParts.push(`${prompt}\n\n---\n\n`);
   }
 
   if (config.includeStats) {
     let totalLines = 0;
     let totalWords = 0;
+    const typeCount = new Map<string, number>();
+
     for (const file of files) {
       totalLines += file.lines;
       totalWords += file.words;
+      const ext = file.extension || "no-ext";
+      typeCount.set(ext, (typeCount.get(ext) || 0) + 1);
     }
-    const sizeKB = (totalBytes / 1024).toFixed(1);
-    const sizeMB = totalBytes > 1024 * 1024 ? ` (${(totalBytes / 1024 / 1024).toFixed(2)}MB)` : "";
-    const statsLine = `Files: ${
-      files.length
-    } | Lines: ${totalLines.toLocaleString()} | Words: ${totalWords.toLocaleString()} | Size: ${sizeKB}KB${sizeMB}`;
-    finalParts.push(statsLine + "\n\n");
+
+    // Sort by frequency so the most common file types appear first
+    const sortedTypes = Array.from(typeCount.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([ext, count]) => `${ext}(${count})`)
+      .join(", ");
+
+    const timestamp = new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    finalParts.push(
+      `> Context Generated: ${timestamp}\n` +
+        `> Files: ${files.length} (${sortedTypes})\n` +
+        `> Total Size: ${formatSize(totalBytes)}\n` +
+        `> Total Lines: ${totalLines.toLocaleString()}\n` +
+        `> Total Words: ${totalWords.toLocaleString()}\n\n`
+    );
   }
 
   finalParts.push(contentOutput);
-
-  return {
-    output: finalParts.join(""),
-    sizeBytes: totalBytes
-  };
+  return { output: finalParts.join(""), sizeBytes: totalBytes };
 }
 
-/**
- * Main command handler for copying file and folder contents.
- * @param clickedUri The URI of the item that was right-clicked.
- * @param selectedUris An array of all selected URIs in the explorer.
- * @param logger The logger instance.
- * @param statusBarManager The status bar manager instance.
- * @param prompt An optional AI prompt to prepend to the output.
- */
 export async function copyAllContents(
   clickedUri: vscode.Uri | undefined,
   selectedUris: vscode.Uri[] | undefined,
@@ -429,20 +385,19 @@ export async function copyAllContents(
   prompt?: string
 ) {
   const config: CopyConfig = {
-    excludePatterns: getConfig("codeBridge", "exclude", ["**/node_modules", "**/.git"]),
+    excludePatterns: getGlobalExcludes(),
     disableSuccessNotifications: getConfig("codeBridge", "notifications.disableSuccess", false),
-    ignoreBinaryFiles: getConfig("codeBridge", "copy.ignoreBinaryFiles", true),
-    maxFileSize: getConfig("codeBridge", "copy.maxFileSize", 0),
     includeStats: getConfig("codeBridge", "copy.includeStats", false),
+    raw: getConfig("codeBridge", "copy.raw", false),
+    maxFileSize: getConfig("codeBridge", "copy.maxFileSize", 0),
     lineWarningLimit: getConfig("codeBridge", "copy.lineWarningLimit", 50000),
-    addPrompt: getConfig("codeBridge", "prompt.addDefault", false),
-    defaultPrompt: getConfig("codeBridge", "prompt.default", ""),
+    codeFence: getConfig("codeBridge", "copy.codeFence", "```"),
     removeLeadingWhitespace: getConfig("codeBridge", "copy.removeLeadingWhitespace", false),
     minifyToSingleLine: getConfig("codeBridge", "copy.minifyToSingleLine", false),
-    raw: getConfig("codeBridge", "copy.raw", false),
-    codeFence: getConfig("codeBridge", "copy.codeFence", "```")
   };
 
+  // Resolve what the user actually wants to copy.
+  // Priority: specific selection > right-clicked item > active editor
   const initial: vscode.Uri[] = [];
   if (selectedUris?.length) initial.push(...selectedUris);
   else if (clickedUri) initial.push(clickedUri);
@@ -456,8 +411,8 @@ export async function copyAllContents(
     return;
   }
 
+  // Group by workspace folder to handle multi-root workspaces correctly
   const groups = new Map<string, { folder: vscode.WorkspaceFolder; uris: vscode.Uri[] }>();
-
   for (const uri of initial) {
     const wf = vscode.workspace.getWorkspaceFolder(uri);
     if (!wf) continue;
@@ -473,19 +428,15 @@ export async function copyAllContents(
 
   try {
     statusBarManager.update("working", "Discovering files...");
-
     const fileSet = new Map<string, vscode.Uri>();
     const visitedPaths = new Set<string>();
+
     for (const { folder, uris } of groups.values()) {
       const groupPromises = uris.map((uri) =>
         collectFileUrisOptimized(uri, config.excludePatterns, folder.uri, logger, visitedPaths)
       );
       const groupResults = await Promise.all(groupPromises);
-      for (const uriList of groupResults) {
-        for (const u of uriList) {
-          fileSet.set(u.fsPath, u);
-        }
-      }
+      for (const uriList of groupResults) for (const u of uriList) fileSet.set(u.fsPath, u);
     }
 
     const allFileUris = [...fileSet.values()].sort((a, b) => a.fsPath.localeCompare(b.fsPath));
@@ -496,6 +447,7 @@ export async function copyAllContents(
       return;
     }
 
+    // Safety check for massive accidental copies (e.g. copying node_modules)
     if (allFileUris.length > 500) {
       const proceedMany = await vscode.window.showWarningMessage(
         `About to process ${allFileUris.length} files. Continue?`,
@@ -510,9 +462,7 @@ export async function copyAllContents(
 
     const processor = new FileProcessor(config, logger);
     const fileContents = await processor.processFiles(allFileUris, {
-      report: (message: string) => {
-        statusBarManager.update("working", message);
-      }
+      report: (msg) => statusBarManager.update("working", msg),
     });
 
     if (fileContents.length === 0) {
@@ -522,9 +472,9 @@ export async function copyAllContents(
     }
 
     const { output: finalContent, sizeBytes } = formatOutput(fileContents, config, prompt);
-
     const finalLineCount = (finalContent.match(/\n/g) || []).length + 1;
 
+    // Warn before flooding the clipboard
     if (config.lineWarningLimit > 0 && finalLineCount > config.lineWarningLimit) {
       const proceed = await vscode.window.showWarningMessage(
         `Output contains ${finalLineCount.toLocaleString()} lines. Continue?`,
@@ -537,7 +487,7 @@ export async function copyAllContents(
       }
     }
 
-    const MAX_CLIPBOARD_SIZE = 50 * 1024 * 1024;
+    const MAX_CLIPBOARD_SIZE = 50 * 1024 * 1024; // 50MB usually crashes clipboards
     if (finalContent.length > MAX_CLIPBOARD_SIZE) {
       const answer = await vscode.window.showErrorMessage(
         `Output is ${(finalContent.length / 1024 / 1024).toFixed(
@@ -549,7 +499,7 @@ export async function copyAllContents(
       if (answer === "Save to File") {
         const saveUri = await vscode.window.showSaveDialog({
           defaultUri: vscode.Uri.file("codebridge-output.md"),
-          filters: { Markdown: ["md"], Text: ["txt"] }
+          filters: { Markdown: ["md"], Text: ["txt"] },
         });
         if (saveUri) {
           await vscode.workspace.fs.writeFile(saveUri, new TextEncoder().encode(finalContent));
@@ -565,8 +515,11 @@ export async function copyAllContents(
     if (!config.disableSuccessNotifications) {
       const sizeMB =
         sizeBytes > 1024 * 1024 ? `${(sizeBytes / 1024 / 1024).toFixed(2)}MB` : `${(sizeBytes / 1024).toFixed(1)}KB`;
-      const message = `Copied ${fileContents.length} files | ${finalLineCount.toLocaleString()} lines | ${sizeMB}`;
-      statusBarManager.update("success", message, 4000);
+      statusBarManager.update(
+        "success",
+        `Copied ${fileContents.length} files | ${finalLineCount.toLocaleString()} lines | ${sizeMB}`,
+        4000
+      );
     } else {
       statusBarManager.update("idle");
     }
@@ -577,14 +530,11 @@ export async function copyAllContents(
   }
 }
 
-/**
- * Displays a Quick Pick menu for the user to select a predefined AI prompt or enter a custom one.
- * @returns A promise that resolves to the selected prompt string, or undefined if the user cancels.
- */
 export async function selectPrompt(): Promise<string | undefined> {
   const config = vscode.workspace.getConfiguration("codeBridge");
   const inspection = config.inspect<Record<string, string>>("prompt.custom");
 
+  // Hierarchy: Workspace settings > User settings > Defaults
   const workspacePrompts = inspection?.workspaceValue;
   const userPrompts = inspection?.globalValue;
   const defaultPrompts = inspection?.defaultValue || {};
@@ -602,17 +552,17 @@ export async function selectPrompt(): Promise<string | undefined> {
   const items = Object.entries(finalPrompts).map(([key, value]) => ({
     label: key,
     detail: value,
-    prompt: value
+    prompt: value,
   }));
 
   items.push({
     label: "Custom Input",
     detail: "Type a custom prompt",
-    prompt: ""
+    prompt: "",
   });
 
   const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: "Select a prompt template for CodeBridge"
+    placeHolder: "Select a prompt template for CodeBridge",
   });
 
   if (!selected) return undefined;
@@ -620,7 +570,7 @@ export async function selectPrompt(): Promise<string | undefined> {
   if (selected.label === "Custom Input") {
     return await vscode.window.showInputBox({
       prompt: "Enter your AI prompt",
-      placeHolder: "e.g., Review this code for bugs"
+      placeHolder: "e.g., Review this code for bugs",
     });
   }
   return selected.prompt;

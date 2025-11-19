@@ -1,8 +1,6 @@
 import * as vscode from "vscode";
 
-/**
- * A singleton logger class that writes to a dedicated VS Code output channel.
- */
+// Singleton logger to funnel everything into one output channel
 export class Logger {
   private static instance: Logger;
   private readonly outputChannel: vscode.OutputChannel;
@@ -11,10 +9,6 @@ export class Logger {
     this.outputChannel = vscode.window.createOutputChannel("CodeBridge");
   }
 
-  /**
-   * Gets the singleton instance of the Logger.
-   * @returns The Logger instance.
-   */
   public static getInstance(): Logger {
     if (!Logger.instance) {
       Logger.instance = new Logger();
@@ -22,10 +16,6 @@ export class Logger {
     return Logger.instance;
   }
 
-  /**
-   * Logs an informational message.
-   * @param message The message to log.
-   */
   public log(message: string): void {
     const timestamp = new Date().toLocaleTimeString();
     const logMessage = `[INFO ${timestamp}] ${message}`;
@@ -33,11 +23,6 @@ export class Logger {
     console.log(logMessage);
   }
 
-  /**
-   * Logs an error message.
-   * @param message The error message to log.
-   * @param error Optional error object or unknown value to include.
-   */
   public error(message: string, error?: unknown): void {
     const timestamp = new Date().toLocaleTimeString();
     const errorMessage = `[ERROR ${timestamp}] ${message}`;
@@ -54,37 +39,25 @@ export class Logger {
     }
   }
 
-  /**
-   * Shows the output channel in the UI.
-   */
   public show(): void {
     this.outputChannel.show();
   }
 }
 
-/**
- * Represents the possible states of the status bar item.
- */
 export type Status = "idle" | "working" | "success" | "error";
 
-/**
- * A singleton class to manage the extension's status bar item.
- */
 export class StatusBarManager implements vscode.Disposable {
   private static instance: StatusBarManager;
   private statusBarItem: vscode.StatusBarItem;
   private timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   private constructor() {
+    // Priority 100 puts it near the left side of the status bar right area
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.update("idle");
     this.statusBarItem.show();
   }
 
-  /**
-   * Gets the singleton instance of the StatusBarManager.
-   * @returns The StatusBarManager instance.
-   */
   public static getInstance(): StatusBarManager {
     if (!StatusBarManager.instance) {
       StatusBarManager.instance = new StatusBarManager();
@@ -92,13 +65,8 @@ export class StatusBarManager implements vscode.Disposable {
     return StatusBarManager.instance;
   }
 
-  /**
-   * Updates the status bar item's text, icon, and command.
-   * @param status The new status to display.
-   * @param message An optional message to show.
-   * @param revertToIdleDelay Optional delay in ms after which to revert to idle state.
-   */
   public update(status: Status, message?: string, revertToIdleDelay?: number): void {
+    // Clear any pending reset so we don't accidentally revert a new status
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
       this.timeoutId = undefined;
@@ -140,43 +108,48 @@ export class StatusBarManager implements vscode.Disposable {
     }
   }
 
-  /**
-   * Shows the status bar item.
-   */
   public show() {
     this.statusBarItem.show();
   }
 
-  /**
-   * Hides the status bar item.
-   */
   public hide() {
     this.statusBarItem.hide();
   }
 
-  /**
-   * Disposes of the status bar item resource.
-   */
   public dispose() {
     this.statusBarItem.dispose();
   }
 }
 
-/**
- * A generic helper function to get a configuration value.
- * @param section The configuration section.
- * @param key The configuration key.
- * @param defaultValue The default value to return if the key is not found.
- * @returns The configuration value or the default.
- */
 export function getConfig<T>(section: string, key: string, defaultValue: T): T {
   const config = vscode.workspace.getConfiguration(section);
   return config.get<T>(key, defaultValue);
 }
 
-/**
- * A collection of POSIX-style path manipulation functions for consistent behavior across platforms.
- */
+// Merges 'files.exclude' and 'search.exclude' to respect user's hidden file settings
+export function getGlobalExcludes(): string[] {
+  const config = vscode.workspace.getConfiguration();
+  const filesExclude = config.get<Record<string, boolean>>("files.exclude") || {};
+  const searchExclude = config.get<Record<string, boolean>>("search.exclude") || {};
+
+  const patterns = new Set<string>();
+
+  for (const [pattern, enabled] of Object.entries(filesExclude)) {
+    if (enabled) patterns.add(pattern);
+  }
+
+  for (const [pattern, enabled] of Object.entries(searchExclude)) {
+    if (enabled) patterns.add(pattern);
+  }
+
+  // Always exclude git, it's never relevant for LLM context
+  patterns.add("**/.git");
+
+  return Array.from(patterns);
+}
+
+// Manual POSIX path handling because 'path' module behaves differently on Windows
+// and we want consistent forward slashes for AI context.
 export const posixPath = {
   dirname: (p: string) => {
     const lastSlash = p.lastIndexOf("/");
@@ -212,14 +185,9 @@ export const posixPath = {
       }
     }
     return result.join("/") || (parts.length > 0 && parts[0] === "" ? "/" : ".");
-  }
+  },
 };
 
-/**
- * Extracts the file extension from a file path.
- * @param fsPath The file path string.
- * @returns The extension including the dot, or an empty string if not found.
- */
 export function getFileExtension(fsPath: string): string {
   const lastDot = fsPath.lastIndexOf(".");
   if (lastDot === -1 || lastDot === 0) {
@@ -228,53 +196,22 @@ export function getFileExtension(fsPath: string): string {
   return fsPath.substring(lastDot);
 }
 
-/**
- * Converts a glob pattern string into a regular expression.
- * Supports *, **, ?, [], and {}.
- * @param glob The glob pattern.
- * @returns A RegExp object or null if the pattern is invalid.
- */
+// Simple glob-to-regex converter.
+// Minimatch is too heavy for just this one use case.
 export function globToRegex(glob: string): RegExp | null {
   try {
+    let processedGlob = glob.replace(/\*\*\//g, "").replace(/\/\*\*/g, "");
     let regex = "";
     let i = 0;
-    while (i < glob.length) {
-      const char = glob[i++];
+    while (i < processedGlob.length) {
+      const char = processedGlob[i++];
       switch (char) {
         case "*":
-          if (glob[i] === "*") {
-            regex += ".*";
-            i++;
-          } else {
-            regex += "[^/]*";
-          }
+          regex += "[^/]*";
           break;
         case "?":
           regex += "[^/]";
           break;
-        case "[": {
-          const closingIndex = glob.indexOf("]", i);
-          if (closingIndex === -1) {
-            regex += "\\[";
-          } else {
-            const classContent = glob.substring(i, closingIndex);
-            regex += `[${classContent}]`;
-            i = closingIndex + 1;
-          }
-          break;
-        }
-        case "{": {
-          const closingIndex = glob.indexOf("}", i);
-          if (closingIndex === -1) {
-            regex += "\\{";
-          } else {
-            const groupContent = glob.substring(i, closingIndex);
-            const alternatives = groupContent.split(",").map((alt) => alt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-            regex += `(?:${alternatives.join("|")})`;
-            i = closingIndex + 1;
-          }
-          break;
-        }
         case ".":
         case "(":
         case ")":
@@ -283,6 +220,10 @@ export function globToRegex(glob: string): RegExp | null {
         case "^":
         case "$":
         case "\\":
+        case "{":
+        case "}":
+        case "[":
+        case "]":
           regex += "\\" + char;
           break;
         default:
@@ -295,17 +236,32 @@ export function globToRegex(glob: string): RegExp | null {
   }
 }
 
-/**
- * Checks if a given relative path matches any of the provided glob patterns.
- * @param relativePath The path to check.
- * @param patterns An array of glob patterns.
- * @returns True if the path matches any pattern, false otherwise.
- */
 export function isIgnored(relativePath: string, patterns: string[]): boolean {
   const normalizedPath = relativePath.replace(/\\/g, "/");
+  const pathSegments = normalizedPath.split("/");
+
   for (const pattern of patterns) {
+    if (pattern === normalizedPath) return true;
+
+    if (pattern.startsWith("**/")) {
+      const suffix = pattern.substring(3);
+      if (normalizedPath.endsWith(suffix) || normalizedPath.includes(`/${suffix}/`)) {
+        return true;
+      }
+      continue;
+    }
+
     const regex = globToRegex(pattern);
-    if (regex && regex.test(normalizedPath)) {
+    if (!regex) continue;
+
+    // Check segments individually (directories)
+    for (const segment of pathSegments) {
+      if (regex.test(segment)) {
+        return true;
+      }
+    }
+
+    if (regex.test(normalizedPath)) {
       return true;
     }
   }

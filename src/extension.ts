@@ -5,23 +5,34 @@ import { copyProjectTree } from "./features/projectTree";
 import { Logger, StatusBarManager } from "./utils";
 
 /**
- * Wraps the vscode.commands.registerCommand function to include a configuration check.
- * The command will only execute if the corresponding configuration key is enabled.
- * @param commandId The ID of the command to register.
- * @param configKey The key in 'codeBridge.commands' configuration to check.
- * @param callback The function to execute when the command is triggered.
- * @param disabledMessage The message to show if the command is disabled.
- * @returns A disposable that can be used to unregister the command.
+ * Defines the structure of the enabled features configuration object.
  */
+interface EnabledFeatures {
+  copyContents: boolean;
+  copyWithPrompt: boolean;
+  generateFiles: boolean;
+  projectTree: boolean;
+}
+
+// Helper to keep command registration clean.
+// We check the config inside the callback so we don't have to restart VS Code
+// if the user toggles a feature setting.
 function registerCommandWithConfigCheck(
   commandId: string,
-  configKey: string,
+  featureKey: keyof EnabledFeatures,
   callback: (...args: any[]) => any,
   disabledMessage: string
 ): vscode.Disposable {
   return vscode.commands.registerCommand(commandId, (...args: any[]) => {
-    const config = vscode.workspace.getConfiguration("codeBridge.commands");
-    if (!config.get(configKey, true)) {
+    const config = vscode.workspace.getConfiguration("codeBridge");
+    const features = config.get<EnabledFeatures>("enabledFeatures", {
+      copyContents: true,
+      copyWithPrompt: true,
+      generateFiles: true,
+      projectTree: true,
+    });
+
+    if (!features[featureKey]) {
       vscode.window.showWarningMessage(disabledMessage);
       return;
     }
@@ -29,47 +40,51 @@ function registerCommandWithConfigCheck(
   });
 }
 
-/**
- * This function is called when the extension is activated.
- * It sets up all the commands, configuration watchers, and UI elements.
- * @param context The extension context provided by VS Code.
- */
 export function activate(context: vscode.ExtensionContext) {
   const logger = Logger.getInstance();
   const statusBarManager = StatusBarManager.getInstance();
   logger.log("CodeBridge extension activated.");
 
-  /**
-   * Updates the visibility of commands in the UI based on the user's settings.
-   * This is controlled by 'when' clauses in package.json that read these contexts.
-   */
+  // Syncs the VS Code 'when' clauses with our config.
+  // This ensures context menu items disappear immediately if disabled in settings.
   const updateContextKeys = () => {
-    const config = vscode.workspace.getConfiguration("codeBridge.commands");
-    const setContext = vscode.commands.executeCommand;
-    setContext("codeBridge.copyContentsEnabled", config.get("enableCopyContents", true));
-    setContext("codeBridge.copyWithPromptEnabled", config.get("enableCopyWithPrompt", true));
-    setContext("codeBridge.generateFilesEnabled", config.get("enableGenerateFiles", true));
-    setContext("codeBridge.projectTreeEnabled", config.get("enableProjectTree", true));
+    const config = vscode.workspace.getConfiguration("codeBridge");
+    const features = config.get<EnabledFeatures>("enabledFeatures", {
+      copyContents: true,
+      copyWithPrompt: true,
+      generateFiles: true,
+      projectTree: true,
+    });
 
-    if (config.get("enableCopyWithPrompt", true)) {
+    const setContext = vscode.commands.executeCommand;
+
+    setContext("codeBridge.copyContentsEnabled", features.copyContents);
+    setContext("codeBridge.copyWithPromptEnabled", features.copyWithPrompt);
+    setContext("codeBridge.generateFilesEnabled", features.generateFiles);
+    setContext("codeBridge.projectTreeEnabled", features.projectTree);
+
+    // Only show the status bar item if the main prompt feature is active
+    if (features.copyWithPrompt) {
       statusBarManager.show();
     } else {
       statusBarManager.hide();
     }
   };
 
+  // Initial sync
   updateContextKeys();
 
+  // Watch for config changes so we don't need a reload
   const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("codeBridge.commands")) {
+    if (e.affectsConfiguration("codeBridge.enabledFeatures")) {
       updateContextKeys();
-      logger.log("CodeBridge command visibility settings updated.");
+      logger.log("CodeBridge enabled features settings updated.");
     }
   });
 
   const copyContentsCommand = registerCommandWithConfigCheck(
     "extension.copyAllContents",
-    "enableCopyContents",
+    "copyContents",
     (clickedUri?: vscode.Uri, selectedUris?: vscode.Uri[]) =>
       copyAllContents(clickedUri, selectedUris, logger, statusBarManager),
     "Copy File Contents command is disabled. Enable it in settings."
@@ -77,9 +92,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   const copyWithPromptCommand = registerCommandWithConfigCheck(
     "extension.copyWithPrompt",
-    "enableCopyWithPrompt",
+    "copyWithPrompt",
     async (clickedUri?: vscode.Uri, selectedUris?: vscode.Uri[]) => {
       const prompt = await selectPrompt();
+      // User cancelled the prompt selection
       if (prompt === undefined) return;
       await copyAllContents(clickedUri, selectedUris, logger, statusBarManager, prompt);
     },
@@ -88,9 +104,11 @@ export function activate(context: vscode.ExtensionContext) {
 
   const generateFromClipboardCommand = registerCommandWithConfigCheck(
     "extension.generateFromClipboard",
-    "enableGenerateFiles",
+    "generateFiles",
     async (targetDirectoryUri?: vscode.Uri) => {
       let targetUri = targetDirectoryUri;
+
+      // Fallback to root workspace if command wasn't triggered from explorer context
       if (!targetUri) {
         if (vscode.workspace.workspaceFolders?.length) {
           targetUri = vscode.workspace.workspaceFolders[0].uri;
@@ -99,6 +117,7 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
       }
+
       const clipboardContent = await vscode.env.clipboard.readText();
       if (!clipboardContent.trim()) {
         vscode.window.showWarningMessage("Clipboard is empty.");
@@ -111,7 +130,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const projectTreeCommand = registerCommandWithConfigCheck(
     "extension.copyProjectTree",
-    "enableProjectTree",
+    "projectTree",
     (uri?: vscode.Uri) => copyProjectTree(uri, logger, statusBarManager),
     "Copy Project Tree command is disabled. Enable it in settings."
   );
@@ -126,10 +145,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-/**
- * This function is called when the extension is deactivated.
- * It's used for cleanup, such as disposing of the status bar item.
- */
 export function deactivate() {
   const logger = Logger.getInstance();
   StatusBarManager.getInstance().dispose();
