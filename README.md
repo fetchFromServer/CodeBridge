@@ -4,104 +4,190 @@
 
 CodeBridge is the fastest way to get your project's context into any AI chat (ChatGPT, Claude, Copilot) and turn AI responses back into real files. Designed for maximum efficiency, token optimization, and developer control.
 
-### Core Features
+---
+
+## Core Features
 
 - **Smart Context Copy:** Copy single files, multi-selections, or entire folders formatted perfectly for LLMs.
-- **Persona-Based Prompts:** Use built-in roles (Architect, Senior Engineer, Security Auditor) to get higher-quality answers.
-- **Token Optimization:** Reduce token usage by up to 40% with whitespace trimming and minification modes.
-- **Project Tree:** Generate a clean, visual directory structure to explain your architecture to the AI.
+- **Diagnostics Integration:** Automatically include VS Code errors and warnings inline with your code.
+- **Dependency Bundling:** Deep scan to automatically include imported/referenced files.
+- **Persona-Based Prompts:** Use built-in roles (Architect, Senior Engineer) or define your own.
+- **Token Optimization:** Reduce token usage with whitespace trimming and minification modes.
+- **Project Tree:** Generate a clean, visual directory structure to explain your architecture.
 - **File Generator:** Turn AI code blocks back into actual files with a single command.
 
 ---
 
 ## Quick Start
 
-#### 1. Send Context TO AI
+### Send Context TO AI
 
-1.  Right-click any file or folder in the VS Code Explorer.
-2.  Select **"Copy + AI Prompt"**.
-3.  Choose a persona (e.g., _"Deep Code Review"_ or _"Refactor to Modern Standards"_).
-4.  Paste into ChatGPT/Claude.
+1. Right-click any file or folder in the VS Code Explorer.
+2. Select **"Copy for AI"** (quick) or open **"CodeBridge Context"** submenu for more options.
+3. Paste into ChatGPT/Claude.
 
-#### 2. Create Files FROM AI
+### Create Files FROM AI
 
-1.  Copy the AI's response (make sure it includes code blocks).
-2.  Right-click the destination folder in VS Code.
-3.  Select **"Generate Files from Clipboard"**.
-4.  Select exactly which files you want to create from the list.
+1. Copy the AI's response (must include code blocks).
+2. Right-click the destination folder in VS Code.
+3. Select **"Create Files from Clipboard"**.
+4. Select which files to create from the list.
+
+### Keyboard Shortcuts
+
+| Shortcut                   | Action                                   |
+| -------------------------- | ---------------------------------------- |
+| `Ctrl+Alt+C` / `Cmd+Alt+C` | Copy with Instruction (prompt selection) |
+| `Ctrl+Alt+V` / `Cmd+Alt+V` | Create Files from Clipboard              |
 
 ---
 
-## Detailed Features
+## Commands
 
-### Smart Context Copy
+| Command                             | Description                                           |
+| ----------------------------------- | ----------------------------------------------------- |
+| **Copy for AI**                     | Copy selected files/folders with markdown formatting  |
+| **Copy with Instruction...**        | Copy with a prompt template prepended                 |
+| **Copy with Active Errors**         | Copy code with inline VS Code diagnostics             |
+| **Bundle Dependencies (Deep Scan)** | Copy selection + automatically include imported files |
+| **Copy Project Structure (Tree)**   | Copy full directory tree                              |
+| **Copy Directory Skeleton**         | Copy folder structure only (no files)                 |
+| **Copy Top-Level Only**             | Copy tree with depth limit of 1                       |
+| **Create Files from Clipboard**     | Parse AI response and generate files                  |
 
-- **Intelligent Formatting:** Automatically wraps code in Markdown fences with language tags and file paths.
-- **Binary Safety:** Automatically skips images, PDFs, and binaries to prevent clipboard clutter.
-- **Global Excludes:** Respects your `.gitignore` and VS Code's `files.exclude` settings automatically.
+---
+
+## Features in Detail
+
+### Diagnostics Integration
+
+CodeBridge can include active VS Code errors and warnings directly in the copied output:
+
+```
+## [!] src/utils.ts
+> [ERROR] Line 42 (ts2345): Argument of type 'string' is not assignable...
+   -> Suggest: "Change type to number" (Preferred)
+```
+
+Enable with `Copy with Active Errors` or set `codeBridge.copy.includeDiagnostics: true`.
+
+### Dependency Bundling
+
+Use **"Bundle Dependencies (Deep Scan)"** to automatically include files that your selection imports or references. The extension uses VS Code's language server to find:
+
+- Import/require targets
+- Type definitions
+- Symbol references
+
+Limit auto-added files with `codeBridge.analysis.maxAutoFiles` (default: 5).
 
 ### Token Optimization
 
-Save money and context window space with advanced copy modes:
+Save context window space:
 
-- **Raw Mode:** Copies code only. No markdown, no paths, no headers.
-- **Whitespace Trimming:** Removes leading indentation from every line.
-- **Single-Line Minification:** Collapses files into single lines (aggressive savings).
+| Mode            | Setting                              | Effect                           |
+| --------------- | ------------------------------------ | -------------------------------- |
+| Raw Mode        | `copy.raw: true`                     | No markdown, no paths, just code |
+| Trim Whitespace | `copy.removeLeadingWhitespace: true` | Removes leading indentation      |
+| Minify          | `copy.minifyToSingleLine: true`      | Collapses to single lines        |
 
-### Project Tree
+⚠️ `removeLeadingWhitespace` breaks Python/YAML. Use only for C-style languages.
 
-Explain your app structure without copying the code.
+### Project Tree Styles
 
-- **Styles:** Choose between `classic` (├──), `modern` (clean), `minimal` (indentation), or `markdown`.
-- **Depth Control:** Limit how deep the tree generation goes to keep it readable.
+```
+classic (default)     modern              minimal         markdown
+├── src/              src/                src/            * src/
+│   ├── index.ts          index.ts          index.ts      * index.ts
+│   └── utils.ts          utils.ts          utils.ts      * utils.ts
+└── package.json      package.json        package.json    * package.json
+```
 
-### AI File Generator
+### File Generator
 
-- **Smart Parsing:** Detects filenames from code comments (`// src/utils.ts`) or headers.
-- **Auto-Directory:** Automatically creates missing folders (e.g., `src/components/ui`).
-- **Safe Mode:** Interactive checklist lets you pick files and warns before overwriting existing ones.
+The parser detects filenames from:
+
+- Markdown headers: `## src/index.ts`
+- Code comments: `// src/utils.ts` or `# config.py`
+- Language hints: ` ```typescript ` → `.ts` extension
+
+Auto-creates nested directories and warns before overwriting.
 
 ---
 
 ## Configuration Reference
 
-Adjust behavior in **Settings > CodeBridge**.
+### General
 
-| Setting                                     | Description                                               | Default      |
-| :------------------------------------------ | :-------------------------------------------------------- | :----------- |
-| **General**                                 |                                                           |              |
-| `codeBridge.enabledFeatures`                | Toggle specific commands on/off to declutter your menu.   | `All True`   |
-| `codeBridge.notifications.disableSuccess`   | Hide "Success" toasts (Errors still shown).               | `false`      |
-| **Prompts**                                 |                                                           |              |
-| `codeBridge.prompt.custom`                  | Define your own prompt library / personas.                | `(See JSON)` |
-| **Copying**                                 |                                                           |              |
-| `codeBridge.copy.includeStats`              | Add file count, token estimates, and language breakdown.  | `false`      |
-| `codeBridge.copy.raw`                       | Copy plain text only (no markdown formatting).            | `false`      |
-| `codeBridge.copy.codeFence`                 | Custom fence string (e.g. `~~~` or ````).                 | ````         |
-| `codeBridge.copy.removeLeadingWhitespace`   | Trim indentation to save tokens.                          | `false`      |
-| `codeBridge.copy.minifyToSingleLine`        | Collapse code into single lines.                          | `false`      |
-| `codeBridge.copy.maxFileSize`               | Max bytes per file to copy (0 = unlimited).               | `0`          |
-| `codeBridge.copy.lineWarningLimit`          | Warn before copying more than X lines.                    | `50000`      |
-| **Project Tree**                            |                                                           |              |
-| `codeBridge.tree.style`                     | Visual style: `classic`, `modern`, `minimal`, `markdown`. | `classic`    |
-| `codeBridge.tree.maxDepth`                  | Max directory depth to traverse.                          | `0`          |
-| `codeBridge.tree.includeHidden`             | Show dotfiles (like `.env`) in the tree.                  | `false`      |
-| `codeBridge.tree.directoriesOnly`           | Hide files, show folders only.                            | `false`      |
-| **Generator**                               |                                                           |              |
-| `codeBridge.generator.overwriteExisting`    | Overwrite files without asking.                           | `false`      |
-| `codeBridge.generator.disableFileSelection` | Skip the review list and generate immediately.            | `false`      |
+| Setting                                   | Description                                        | Default                               |
+| ----------------------------------------- | -------------------------------------------------- | ------------------------------------- |
+| `codeBridge.enabledFeatures`              | Toggle individual commands on/off                  | `All true`                            |
+| `codeBridge.notifications.disableSuccess` | Hide success toasts (errors still shown)           | `false`                               |
+| `codeBridge.exclude`                      | Glob patterns to exclude (extends `files.exclude`) | `["node_modules/**", "dist/**", ...]` |
+
+### Copying
+
+| Setting                                   | Description                                    | Default |
+| ----------------------------------------- | ---------------------------------------------- | ------- |
+| `codeBridge.copy.raw`                     | Plain text only, no markdown                   | `false` |
+| `codeBridge.copy.includeStats`            | Add file count, size, language breakdown       | `false` |
+| `codeBridge.copy.includeDiagnostics`      | Include VS Code errors/warnings inline         | `true`  |
+| `codeBridge.copy.codeFence`               | Custom fence string                            | ` ``` ` |
+| `codeBridge.copy.removeLeadingWhitespace` | Trim indentation                               | `false` |
+| `codeBridge.copy.minifyToSingleLine`      | Collapse to single lines                       | `false` |
+| `codeBridge.copy.maxFileSize`             | Skip files larger than X bytes (0 = unlimited) | `0`     |
+| `codeBridge.copy.lineWarningLimit`        | Warn before copying more than X lines          | `50000` |
+
+### Diagnostics
+
+| Setting                                    | Description              | Default                                                  |
+| ------------------------------------------ | ------------------------ | -------------------------------------------------------- |
+| `codeBridge.diagnostics.allowedSeverities` | Filter by severity level | `{error: true, warning: true, info: false, hint: false}` |
+
+### Analysis
+
+| Setting                                  | Description                    | Default |
+| ---------------------------------------- | ------------------------------ | ------- |
+| `codeBridge.analysis.enabled`            | Enable dependency parsing      | `true`  |
+| `codeBridge.analysis.autoCopyReferences` | Auto-include referencing files | `false` |
+| `codeBridge.analysis.maxAutoFiles`       | Max files to auto-add          | `5`     |
+
+### Project Tree
+
+| Setting                           | Description                                | Default   |
+| --------------------------------- | ------------------------------------------ | --------- |
+| `codeBridge.tree.style`           | `classic`, `modern`, `minimal`, `markdown` | `classic` |
+| `codeBridge.tree.maxDepth`        | Max directory depth (0 = unlimited)        | `0`       |
+| `codeBridge.tree.includeHidden`   | Show dotfiles                              | `false`   |
+| `codeBridge.tree.directoriesOnly` | Folders only, no files                     | `false`   |
+
+### Generator
+
+| Setting                                     | Description                            | Default |
+| ------------------------------------------- | -------------------------------------- | ------- |
+| `codeBridge.generator.overwriteExisting`    | Overwrite without asking               | `false` |
+| `codeBridge.generator.disableFileSelection` | Skip review list, generate immediately | `false` |
+
+### Prompts
+
+| Setting                    | Description                    | Default          |
+| -------------------------- | ------------------------------ | ---------------- |
+| `codeBridge.prompt.custom` | Your prompt library / personas | `(See settings)` |
 
 ---
 
 ## FAQ
 
 **How do I add my own prompts?**
-Go to Settings -> Search "CodeBridge Prompts" -> Edit in `settings.json`. You can add your own keys and values there. The extension will prioritize your workspace or user settings over the defaults.
+Settings → Search "CodeBridge prompt.custom" → Edit in `settings.json`. Workspace settings override user settings.
 
 **Why isn't `node_modules` being copied?**
-CodeBridge automatically uses your standard VS Code `files.exclude` and `search.exclude` settings. If a folder is grayed out or hidden in your Explorer, CodeBridge won't copy it.
+CodeBridge respects `files.exclude`, `search.exclude`, and its own `codeBridge.exclude` patterns. Default excludes: `node_modules/**`, `dist/**`, `build/**`, `*.lock`, `*.svg`, `*.png`.
 
-**Does the Token Optimization break code?**
+**What's the difference between "Copy for AI" and "Bundle Dependencies"?**
+"Copy for AI" copies exactly what you select. "Bundle Dependencies" additionally scans for imports and includes those files automatically (up to `maxAutoFiles` limit).
 
-- `removeLeadingWhitespace`: Safe for C-style languages (JS, TS, Java, C#). **Do not use** for Python or YAML.
-- `minifyToSingleLine`: Useful for CSS/JSON or if the AI just needs to "read" the logic, but it destroys readability.
+**Does Token Optimization break code?**
+
+- `removeLeadingWhitespace`: Safe for JS/TS/Java/C#. **Breaks** Python/YAML.
+- `minifyToSingleLine`: Destroys readability but useful when AI just needs to analyze logic.

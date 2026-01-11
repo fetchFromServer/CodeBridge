@@ -2,7 +2,7 @@
   "name": "codebridge",
   "displayName": "CodeBridge - AI Context & Workflow",
   "description": "The missing link between VS Code and LLMs. Copy context, project trees, and generate files seamlessly.",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "publisher": "fetchFromServer",
   "icon": "images/icon.png",
   "keywords": [
@@ -59,7 +59,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/vscode": "^1.104.0",
-    "@vscode/test-web": "^0.0.77",
+    "@vscode/test-web": "^0.0.78",
     "esbuild": "^0.27.2",
     "glob": "^13.0.0",
     "mocha": "^11.7.5",
@@ -67,53 +67,109 @@
     "typescript": "^5.9.3"
   },
   "activationEvents": [
-    "onCommand:extension.copyAllContents",
-    "onCommand:extension.copyWithPrompt",
-    "onCommand:extension.generateFromClipboard",
-    "onCommand:extension.copyProjectTree"
+    "onStartupFinished"
   ],
   "contributes": {
     "commands": [
       {
         "command": "extension.copyAllContents",
-        "title": "Copy Code",
+        "title": "Copy for AI",
+        "shortTitle": "Copy Context",
         "icon": "$(copy)"
       },
       {
         "command": "extension.copyWithPrompt",
-        "title": "Copy + AI Prompt",
-        "icon": "$(beaker)"
+        "title": "Copy with Instruction...",
+        "shortTitle": "Copy w/ Prompt",
+        "icon": "$(comment-discussion)"
       },
       {
-        "command": "extension.generateFromClipboard",
-        "title": "Generate Files from Clipboard"
+        "command": "extension.copyWithDiagnostics",
+        "title": "Copy with Active Errors",
+        "shortTitle": "Copy w/ Errors",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "extension.copyWithDeepAnalysis",
+        "title": "Bundle Dependencies (Deep Scan)",
+        "shortTitle": "Deep Bundle",
+        "icon": "$(references)"
       },
       {
         "command": "extension.copyProjectTree",
-        "title": "Copy Tree",
+        "title": "Copy Project Structure (Tree)",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "extension.copyProjectTreeFolders",
+        "title": "Copy Directory Skeleton",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "extension.copyProjectTreeShallow",
+        "title": "Copy Top-Level Only",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "extension.generateFromClipboard",
+        "title": "Create Files from Clipboard",
+        "icon": "$(new-file)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "codebridge.copyOptions",
+        "label": "CodeBridge Context",
+        "icon": "$(hubot)"
       }
     ],
     "menus": {
       "explorer/context": [
         {
           "command": "extension.copyAllContents",
-          "group": "1_codebridge@1",
-          "when": "config.codeBridge.enabledFeatures.copyContents"
+          "group": "1_cutcopypaste@1",
+          "when": "filesExplorerFocus && config.codeBridge.enabledFeatures.copyContents"
         },
         {
-          "command": "extension.copyWithPrompt",
-          "group": "1_codebridge@2",
-          "when": "config.codeBridge.enabledFeatures.copyWithPrompt"
+          "submenu": "codebridge.copyOptions",
+          "group": "1_cutcopypaste@2",
+          "when": "filesExplorerFocus"
         },
         {
           "command": "extension.generateFromClipboard",
-          "group": "1_codebridge@3",
-          "when": "config.codeBridge.enabledFeatures.generateFiles"
+          "group": "1_cutcopypaste@3",
+          "when": "filesExplorerFocus && config.codeBridge.enabledFeatures.generateFiles"
+        }
+      ],
+      "codebridge.copyOptions": [
+        {
+          "command": "extension.copyWithPrompt",
+          "group": "1_smart_actions",
+          "when": "config.codeBridge.enabledFeatures.copyWithPrompt"
+        },
+        {
+          "command": "extension.copyWithDeepAnalysis",
+          "group": "1_smart_actions",
+          "when": "config.codeBridge.enabledFeatures.copyWithPrompt"
+        },
+        {
+          "command": "extension.copyWithDiagnostics",
+          "group": "2_debug_actions",
+          "when": "config.codeBridge.enabledFeatures.copyContents"
         },
         {
           "command": "extension.copyProjectTree",
-          "group": "1_codebridge@4",
+          "group": "3_structure",
+          "when": "config.codeBridge.enabledFeatures.projectTree"
+        },
+        {
+          "command": "extension.copyProjectTreeFolders",
+          "group": "3_structure",
+          "when": "config.codeBridge.enabledFeatures.projectTree"
+        },
+        {
+          "command": "extension.copyProjectTreeShallow",
+          "group": "3_structure",
           "when": "config.codeBridge.enabledFeatures.projectTree"
         }
       ]
@@ -137,142 +193,239 @@
       "properties": {
         "codeBridge.enabledFeatures": {
           "type": "object",
+          "order": 1,
           "default": {
             "copyContents": true,
             "copyWithPrompt": true,
             "generateFiles": true,
             "projectTree": true
           },
-          "description": "Toggle individual commands to tailor the extension to your specific workflow.",
+          "markdownDescription": "Toggle individual commands to tailor the extension to your specific workflow.",
           "properties": {
             "copyContents": {
               "type": "boolean",
-              "default": true,
-              "description": "Enable basic 'Copy Code' command."
+              "default": true
             },
             "copyWithPrompt": {
               "type": "boolean",
-              "default": true,
-              "description": "Enable 'Copy + AI Prompt' command."
+              "default": true
             },
             "generateFiles": {
               "type": "boolean",
-              "default": true,
-              "description": "Enable 'Generate Files from Clipboard' command."
+              "default": true
             },
             "projectTree": {
               "type": "boolean",
-              "default": true,
-              "description": "Enable 'Copy Tree' command."
+              "default": true
             }
           },
           "scope": "resource"
         },
         "codeBridge.notifications.disableSuccess": {
           "type": "boolean",
+          "order": 2,
           "default": false,
-          "description": "[General] Quiet mode. Hides success notifications but keeps error alerts.",
+          "markdownDescription": "**Quiet Mode**: Hides success notifications but keeps error alerts.",
           "scope": "resource"
         },
         "codeBridge.copy.raw": {
           "type": "boolean",
+          "order": 10,
           "default": false,
-          "description": "[Copy] Plain text mode. Skips Markdown formatting, file paths, and headers.",
+          "markdownDescription": "**Plain Text Mode**: Copies code without Markdown formatting or headers.",
           "scope": "resource"
         },
         "codeBridge.copy.includeStats": {
           "type": "boolean",
+          "order": 11,
           "default": false,
-          "description": "[Copy] Add a summary header with file counts and token estimates.",
+          "markdownDescription": "Add a summary header with file counts and token estimates.",
           "scope": "resource"
         },
         "codeBridge.copy.codeFence": {
           "type": "string",
+          "order": 12,
           "default": "```",
-          "description": "[Copy] Custom Markdown fence (e.g., ``` or ~~~). Ignored in raw mode.",
+          "markdownDescription": "Custom Markdown fence (e.g., ``` or ~~~).",
           "scope": "resource"
         },
         "codeBridge.copy.removeLeadingWhitespace": {
           "type": "boolean",
+          "order": 13,
           "default": false,
-          "description": "[Copy] Trim leading indentation to save tokens (Use with caution on Python/YAML).",
+          "markdownDescription": "Trim leading indentation to save tokens.",
           "scope": "resource"
         },
         "codeBridge.copy.minifyToSingleLine": {
           "type": "boolean",
+          "order": 14,
           "default": false,
-          "description": "[Copy] Aggressive minification. Collapses files into single lines.",
+          "markdownDescription": "**Aggressive Minification**: Collapses files into single lines.",
           "scope": "resource"
         },
         "codeBridge.copy.maxFileSize": {
           "type": "number",
+          "order": 15,
           "default": 0,
-          "description": "[Copy] Safety limit. Skip files larger than this (in bytes). 0 = Unlimited.",
+          "markdownDescription": "Skip files larger than this (in bytes). `0` = Unlimited.",
           "scope": "resource"
         },
         "codeBridge.copy.lineWarningLimit": {
           "type": "number",
+          "order": 16,
           "default": 50000,
-          "description": "[Copy] Warning threshold for total line count before copying.",
+          "markdownDescription": "Show warning if output exceeds this line count.",
+          "scope": "resource"
+        },
+        "codeBridge.copy.includeDiagnostics": {
+          "type": "boolean",
+          "order": 20,
+          "default": true,
+          "markdownDescription": "Include active VS Code problems (errors/warnings) inline.",
+          "scope": "resource"
+        },
+        "codeBridge.diagnostics.allowedSeverities": {
+          "type": "object",
+          "order": 21,
+          "default": {
+            "error": true,
+            "warning": true,
+            "info": false,
+            "hint": false
+          },
+          "markdownDescription": "Filter diagnostics by severity.",
+          "properties": {
+            "error": {
+              "type": "boolean",
+              "default": true
+            },
+            "warning": {
+              "type": "boolean",
+              "default": true
+            },
+            "info": {
+              "type": "boolean",
+              "default": false
+            },
+            "hint": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "codeBridge.analysis.enabled": {
+          "type": "boolean",
+          "order": 30,
+          "default": true,
+          "markdownDescription": "**Impact Analysis**: Enables parsing of files to find dependencies.",
+          "scope": "resource"
+        },
+        "codeBridge.analysis.autoCopyReferences": {
+          "type": "boolean",
+          "order": 31,
+          "default": false,
+          "markdownDescription": "**Context Expansion**: Automatically include files that *import* or *use* selected code.",
+          "scope": "resource"
+        },
+        "codeBridge.analysis.maxAutoFiles": {
+          "type": "number",
+          "order": 32,
+          "default": 5,
+          "markdownDescription": "Safety limit for automatically added files.",
           "scope": "resource"
         },
         "codeBridge.prompt.custom": {
           "type": "object",
+          "order": 40,
           "default": {
-            "Analyze & Contextualize": "Act as a Principal Architect. Analyze the provided codebase. Identify the architectural pattern, data flow, and external dependencies. Summarize the system's purpose in 3 bullets, then await my specific questions.",
-            "Deep Code Review": "Review this code as a strict Senior Engineer. Focus exclusively on: 1. Security vulnerabilities. 2. Performance bottlenecks. 3. Race conditions or Async bugs. 4. Maintainability issues. Ignore trivial formatting. For each issue, explain the risk and provide the fixed code block.",
-            "Refactor to Modern Standards": "Refactor this code for production. Apply SOLID principles, improve type safety, and reduce cyclomatic complexity. Replace legacy patterns with modern language features. Output the full refactored code with comments explaining key changes.",
-            "Write Technical Docs": "Generate developer-facing documentation for this code. Include: 1. Purpose/Summary. 2. API signature (Inputs/Outputs). 3. A concrete usage example. 4. Important caveats or constraints."
+            "Analyze & Contextualize": "Act as a Principal Architect...",
+            "Deep Code Review": "Review this code as a strict Senior Engineer...",
+            "Refactor to Modern Standards": "Refactor this code for production...",
+            "Write Technical Docs": "Generate developer-facing documentation..."
           },
-          "description": "[Prompts] Customize your AI personas and standard tasks.",
+          "markdownDescription": "Customize your AI personas.",
           "scope": "resource"
         },
         "codeBridge.generator.overwriteExisting": {
           "type": "boolean",
+          "order": 50,
           "default": false,
-          "description": "[Generator] Force overwrite existing files without confirmation.",
+          "markdownDescription": "Force overwrite existing files without confirmation.",
           "scope": "resource"
         },
         "codeBridge.generator.disableFileSelection": {
           "type": "boolean",
+          "order": 51,
           "default": false,
-          "description": "[Generator] Skip the file selection list and generate everything immediately.",
+          "markdownDescription": "Skip the file selection list and generate everything immediately.",
           "scope": "resource"
         },
         "codeBridge.tree.style": {
           "type": "string",
+          "order": 60,
           "default": "classic",
-          "description": "[Tree] Visual style for the directory structure.",
           "enum": [
             "classic",
             "modern",
             "minimal",
             "markdown"
           ],
-          "enumDescriptions": [
-            "Standard ASCII tree (├──)",
-            "Clean look without vertical pipes",
-            "Indentation only (ideal for large trees)",
-            "Markdown bullet list format"
-          ],
+          "markdownDescription": "Visual style for the directory structure.",
           "scope": "resource"
         },
         "codeBridge.tree.includeHidden": {
           "type": "boolean",
+          "order": 61,
           "default": false,
-          "description": "[Tree] Include dotfiles (e.g., .env, .gitignore) in the output.",
+          "markdownDescription": "Include dotfiles (e.g., `.env`) in the tree output.",
           "scope": "resource"
         },
         "codeBridge.tree.maxDepth": {
           "type": "number",
+          "order": 62,
           "default": 0,
-          "description": "[Tree] Limit directory depth. 0 = Unlimited.",
+          "markdownDescription": "Limit directory depth. `0` = Unlimited.",
           "scope": "resource"
         },
         "codeBridge.tree.directoriesOnly": {
           "type": "boolean",
+          "order": 63,
           "default": false,
-          "description": "[Tree] Hide files, show folder structure only.",
+          "markdownDescription": "Hide files, show folder structure only.",
+          "scope": "resource"
+        },
+        "codeBridge.exclude": {
+          "type": "array",
+          "order": 90,
+          "default": [
+            "node_modules",
+            "vendor",
+            ".pnpm",
+            ".yarn",
+            "dist",
+            "build",
+            "out",
+            "target",
+            ".next",
+            ".nuxt",
+            ".svelte-kit",
+            ".output",
+            ".cache",
+            ".parcel-cache",
+            ".vite",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            "coverage",
+            ".git",
+            ".idea",
+            ".vscode",
+            ".gradle"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "markdownDescription": "Glob patterns to exclude from AI context (extends `files.exclude`). Use this for files you want to see in VS Code but hide from the AI.",
           "scope": "resource"
         }
       }
