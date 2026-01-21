@@ -1,49 +1,46 @@
 {
   "name": "codebridge",
-  "displayName": "CodeBridge - AI Context & Workflow",
-  "description": "The missing link between VS Code and LLMs. Copy context, project trees, and generate files seamlessly.",
-  "version": "2.5.2",
+  "displayName": "CodeBridge: Context & File Utils",
+  "description": "Smart clipboard utilities. Copy code with context, visualize folder structures, and scaffold files from text blocks.",
+  "version": "2.6.0",
   "publisher": "fetchFromServer",
   "icon": "images/icon.png",
-  "keywords": [
-    "ai",
-    "llm",
-    "context",
-    "chatgpt",
-    "claude",
-    "copilot",
-    "prompt engineering",
-    "copy code",
-    "workflow",
-    "productivity",
-    "automation"
-  ],
-  "categories": [
-    "AI",
-    "Other"
-  ],
-  "homepage": "https://github.com/fetchFromServer/codebridge#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fetchFromServer/codebridge.git"
+    "url": "https://github.com/fetchFromServer/codebridge"
   },
   "bugs": {
     "url": "https://github.com/fetchFromServer/codebridge/issues"
   },
+  "homepage": "https://github.com/fetchFromServer/codebridge/blob/main/README.md",
+  "keywords": [
+    "context",
+    "copy code",
+    "markdown",
+    "scaffolding",
+    "productivity",
+    "clipboard",
+    "documentation",
+    "project tree"
+  ],
+  "categories": [
+    "Other",
+    "Programming Languages"
+  ],
   "main": "./dist/desktop/extension.js",
   "browser": "./dist/web/extension.js",
   "engines": {
-    "vscode": "^1.104.0"
+    "vscode": "^1.108.1"
   },
   "extensionKind": [
+    "ui",
     "workspace"
   ],
-  "capabilities": {
-    "virtualWorkspaces": true
-  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "scripts": {
     "vscode:prepublish": "npm run package",
-    "update:latest": "npm install -g npm-check-updates && ncu -u && npm install",
     "compile": "npm-run-all --parallel compile:desktop compile:web",
     "watch": "npm-run-all --parallel watch:desktop watch:web",
     "package": "npm-run-all --parallel package:desktop package:web",
@@ -51,14 +48,14 @@
     "watch:desktop": "node esbuild.js --platform=desktop --watch",
     "package:desktop": "node esbuild.js --platform=desktop --production",
     "compile:web": "node esbuild.js --platform=web",
-    "watch:web": "node esbuild.js --platform=web --watch",
+    "watch:web": "node esbuild.js --platform=web --production",
     "package:web": "node esbuild.js --platform=web --production",
-    "run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. .",
     "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/vscode": "^1.104.0",
+    "@types/node": "^25.0.9",
+    "@types/vscode": "^1.108.1",
     "@vscode/test-web": "^0.0.78",
     "esbuild": "^0.27.2",
     "glob": "^13.0.0",
@@ -66,61 +63,80 @@
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3"
   },
-  "activationEvents": [
-    "onStartupFinished"
-  ],
   "contributes": {
     "commands": [
       {
         "command": "extension.copyAllContents",
-        "title": "Copy for AI",
-        "shortTitle": "Copy Context",
-        "icon": "$(copy)"
+        "title": "Copy with Context",
+        "icon": "$(copy)",
+        "category": "CodeBridge"
       },
       {
         "command": "extension.copyWithPrompt",
-        "title": "Copy with Instruction...",
-        "shortTitle": "Copy w/ Prompt",
-        "icon": "$(comment-discussion)"
+        "title": "Copy with Template...",
+        "icon": "$(comment-discussion)",
+        "category": "CodeBridge"
       },
       {
         "command": "extension.copyWithDiagnostics",
-        "title": "Copy with Active Errors",
-        "shortTitle": "Copy w/ Errors",
-        "icon": "$(bug)"
+        "title": "Copy with Issues",
+        "icon": "$(bug)",
+        "category": "CodeBridge"
       },
       {
-        "command": "extension.copyWithDeepAnalysis",
-        "title": "Bundle Dependencies (Deep Scan)",
-        "shortTitle": "Deep Bundle",
-        "icon": "$(references)"
+        "command": "extension.copyDiagnosticsOnly",
+        "title": "Copy Problems Report",
+        "icon": "$(error)",
+        "category": "CodeBridge"
       },
       {
         "command": "extension.copyProjectTree",
-        "title": "Copy Project Structure (Tree)",
-        "icon": "$(list-tree)"
+        "title": "Copy Project Tree",
+        "icon": "$(list-tree)",
+        "category": "CodeBridge"
       },
       {
         "command": "extension.copyProjectTreeFolders",
-        "title": "Copy Directory Skeleton",
-        "icon": "$(folder)"
+        "title": "Copy Folder Structure",
+        "icon": "$(folder)",
+        "category": "CodeBridge"
+      },
+      {
+        "command": "extension.copyProjectTreeMarkdown",
+        "title": "Copy Tree (Markdown)",
+        "icon": "$(markdown)",
+        "category": "CodeBridge"
+      },
+      {
+        "command": "extension.copyProjectTreeModern",
+        "title": "Copy Tree (Modern)",
+        "icon": "$(symbol-structure)",
+        "category": "CodeBridge"
+      },
+      {
+        "command": "extension.copyProjectTreeClassic",
+        "title": "Copy Tree (Classic)",
+        "icon": "$(list-tree)",
+        "category": "CodeBridge"
       },
       {
         "command": "extension.copyProjectTreeShallow",
         "title": "Copy Top-Level Only",
-        "icon": "$(list-flat)"
+        "icon": "$(list-flat)",
+        "category": "CodeBridge"
       },
       {
         "command": "extension.generateFromClipboard",
-        "title": "Create Files from Clipboard",
-        "icon": "$(new-file)"
+        "title": "Scaffold Files from Clipboard",
+        "icon": "$(new-file)",
+        "category": "CodeBridge"
       }
     ],
     "submenus": [
       {
         "id": "codebridge.copyOptions",
-        "label": "CodeBridge Context",
-        "icon": "$(hubot)"
+        "label": "Context Actions",
+        "icon": "$(sparkle)"
       }
     ],
     "menus": {
@@ -128,49 +144,45 @@
         {
           "command": "extension.copyAllContents",
           "group": "1_cutcopypaste@1",
-          "when": "filesExplorerFocus && config.codeBridge.enabledFeatures.copyContents"
+          "when": "filesExplorerFocus"
         },
         {
           "submenu": "codebridge.copyOptions",
           "group": "1_cutcopypaste@2",
           "when": "filesExplorerFocus"
-        },
-        {
-          "command": "extension.generateFromClipboard",
-          "group": "1_cutcopypaste@3",
-          "when": "filesExplorerFocus && config.codeBridge.enabledFeatures.generateFiles"
         }
       ],
       "codebridge.copyOptions": [
         {
-          "command": "extension.copyWithPrompt",
-          "group": "1_smart_actions",
-          "when": "config.codeBridge.enabledFeatures.copyWithPrompt"
-        },
-        {
-          "command": "extension.copyWithDeepAnalysis",
-          "group": "1_smart_actions",
-          "when": "config.codeBridge.enabledFeatures.copyWithPrompt"
+          "command": "extension.copyDiagnosticsOnly",
+          "group": "1_problems@1"
         },
         {
           "command": "extension.copyWithDiagnostics",
-          "group": "2_debug_actions",
-          "when": "config.codeBridge.enabledFeatures.copyContents"
+          "group": "1_problems@2"
+        },
+        {
+          "command": "extension.copyWithPrompt",
+          "group": "2_smart@1"
         },
         {
           "command": "extension.copyProjectTree",
-          "group": "3_structure",
-          "when": "config.codeBridge.enabledFeatures.projectTree"
+          "group": "3_structure@1"
         },
         {
           "command": "extension.copyProjectTreeFolders",
-          "group": "3_structure",
-          "when": "config.codeBridge.enabledFeatures.projectTree"
+          "group": "3_structure@2"
         },
         {
-          "command": "extension.copyProjectTreeShallow",
-          "group": "3_structure",
-          "when": "config.codeBridge.enabledFeatures.projectTree"
+          "command": "extension.generateFromClipboard",
+          "group": "5_generation",
+          "when": "filesExplorerFocus"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "extension.generateFromClipboard",
+          "when": "filesExplorerFocus"
         }
       ]
     },
@@ -178,225 +190,322 @@
       {
         "command": "extension.copyWithPrompt",
         "key": "ctrl+alt+c",
-        "mac": "cmd+alt+c",
-        "when": "config.codeBridge.enabledFeatures.copyWithPrompt"
+        "mac": "cmd+alt+c"
       },
       {
         "command": "extension.generateFromClipboard",
         "key": "ctrl+alt+v",
-        "mac": "cmd+alt+v",
-        "when": "config.codeBridge.enabledFeatures.generateFiles"
+        "mac": "cmd+alt+v"
       }
     ],
     "configuration": {
       "title": "CodeBridge",
       "properties": {
-        "codeBridge.enabledFeatures": {
-          "type": "object",
-          "order": 1,
-          "default": {
-            "copyContents": true,
-            "copyWithPrompt": true,
-            "generateFiles": true,
-            "projectTree": true
-          },
-          "markdownDescription": "Toggle individual commands to tailor the extension to your specific workflow.",
-          "properties": {
-            "copyContents": {
-              "type": "boolean",
-              "default": true
-            },
-            "copyWithPrompt": {
-              "type": "boolean",
-              "default": true
-            },
-            "generateFiles": {
-              "type": "boolean",
-              "default": true
-            },
-            "projectTree": {
-              "type": "boolean",
-              "default": true
-            }
-          },
-          "scope": "resource"
-        },
-        "codeBridge.notifications.disableSuccess": {
-          "type": "boolean",
-          "order": 2,
-          "default": false,
-          "markdownDescription": "**Quiet Mode**: Hides success notifications but keeps error alerts.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.raw": {
-          "type": "boolean",
-          "order": 10,
-          "default": false,
-          "markdownDescription": "**Plain Text Mode**: Copies code without Markdown formatting or headers.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.includeStats": {
-          "type": "boolean",
-          "order": 11,
-          "default": false,
-          "markdownDescription": "Add a summary header with file counts and token estimates.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.codeFence": {
+        "codeBridge.general.notifications": {
           "type": "string",
-          "order": 12,
-          "default": "```",
-          "markdownDescription": "Custom Markdown fence (e.g., ``` or ~~~).",
-          "scope": "resource"
+          "order": 1,
+          "default": "all",
+          "markdownDescription": "Controls status bar verbosity.",
+          "enum": [
+            "all",
+            "errors",
+            "none"
+          ],
+          "enumItemLabels": [
+            "All",
+            "Errors Only",
+            "Silent"
+          ]
         },
-        "codeBridge.copy.removeLeadingWhitespace": {
-          "type": "boolean",
-          "order": 13,
-          "default": false,
-          "markdownDescription": "Trim leading indentation to save tokens.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.minifyToSingleLine": {
-          "type": "boolean",
-          "order": 14,
-          "default": false,
-          "markdownDescription": "**Aggressive Minification**: Collapses files into single lines.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.maxFileSize": {
-          "type": "number",
-          "order": 15,
-          "default": 0,
-          "markdownDescription": "Skip files larger than this (in bytes). `0` = Unlimited.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.lineWarningLimit": {
-          "type": "number",
-          "order": 16,
-          "default": 50000,
-          "markdownDescription": "Show warning if output exceeds this line count.",
-          "scope": "resource"
-        },
-        "codeBridge.copy.includeDiagnostics": {
-          "type": "boolean",
-          "order": 20,
-          "default": true,
-          "markdownDescription": "Include active VS Code problems (errors/warnings) inline.",
-          "scope": "resource"
-        },
-        "codeBridge.diagnostics.allowedSeverities": {
+        "codeBridge.general.prompts": {
           "type": "object",
-          "order": 21,
+          "order": 2,
           "default": {
-            "error": true,
-            "warning": true,
-            "info": false,
-            "hint": false
+            "Architectural Plan": "Analyze the request but do NOT generate code yet. Create a detailed execution plan. Outline the architecture, data flow, key algorithms, and potential edge cases. Wait for confirmation.",
+            "Rapid Prototype": "Create a functional solution immediately. Prioritize execution speed and working logic over clean abstractions or style guidelines. Produce a standalone implementation that solves the core problem now.",
+            "Iterative Fix": "Analyze the error context. Do NOT revert to a previous state. Propose a specific fix that resolves the exception while preserving the recent logic updates. Iterate forward until execution succeeds.",
+            "Generate Rulefile": "Extract the core business logic, naming conventions, and architectural patterns from this code into a Markdown format. This document will serve as the technical source of truth.",
+            "Task Automation": "Generate a standalone, single-file script to automate this manual process. Use the most appropriate language for the environment. Keep dependencies minimal and logic linear."
           },
-          "markdownDescription": "Filter diagnostics by severity.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "Templates for **Copy with Template**."
+        },
+        "codeBridge.copy.format": {
+          "type": "string",
+          "order": 10,
+          "default": "markdown",
+          "markdownDescription": "Output format for copied content.",
+          "enum": [
+            "markdown",
+            "text"
+          ],
+          "enumItemLabels": [
+            "Markdown",
+            "Raw Text"
+          ]
+        },
+        "codeBridge.copy.fenceStyle": {
+          "type": "string",
+          "order": 11,
+          "default": "```",
+          "markdownDescription": "Code block delimiters."
+        },
+        "codeBridge.copy.metadata": {
+          "type": "object",
+          "order": 12,
+          "default": {
+            "banner": false,
+            "stats": false,
+            "chars": false,
+            "issuesSummary": false,
+            "gitContext": false,
+            "systemInfo": false,
+            "fileMetadata": false
+          },
+          "markdownDescription": "Header information settings.",
+          "additionalProperties": false,
           "properties": {
-            "error": {
+            "banner": {
               "type": "boolean",
-              "default": true
+              "default": false,
+              "description": "Show summary banner."
             },
-            "warning": {
+            "stats": {
               "type": "boolean",
-              "default": true
+              "default": false,
+              "description": "Show line count and file size."
             },
-            "info": {
+            "chars": {
               "type": "boolean",
-              "default": false
+              "default": false,
+              "description": "Show character count."
             },
-            "hint": {
+            "issuesSummary": {
               "type": "boolean",
-              "default": false
+              "default": false,
+              "description": "Show error summary."
+            },
+            "gitContext": {
+              "type": "boolean",
+              "default": false,
+              "description": "Show project name/branch."
+            },
+            "systemInfo": {
+              "type": "boolean",
+              "default": false,
+              "description": "Show Environment info."
+            },
+            "fileMetadata": {
+              "type": "boolean",
+              "default": false,
+              "description": "Show modified timestamps."
             }
           }
         },
-        "codeBridge.analysis.enabled": {
-          "type": "boolean",
-          "order": 30,
-          "default": true,
-          "markdownDescription": "**Impact Analysis**: Enables parsing of files to find dependencies.",
-          "scope": "resource"
-        },
-        "codeBridge.analysis.autoCopyReferences": {
-          "type": "boolean",
-          "order": 31,
-          "default": false,
-          "markdownDescription": "**Context Expansion**: Automatically include files that *import* or *use* selected code.",
-          "scope": "resource"
-        },
-        "codeBridge.analysis.maxAutoFiles": {
-          "type": "number",
-          "order": 32,
-          "default": 5,
-          "markdownDescription": "Safety limit for automatically added files.",
-          "scope": "resource"
-        },
-        "codeBridge.prompt.custom": {
+        "codeBridge.copy.transform": {
           "type": "object",
-          "order": 40,
+          "order": 13,
           "default": {
-            "Analyze & Contextualize": "Act as a Principal Architect...",
-            "Deep Code Review": "Review this code as a strict Senior Engineer...",
-            "Refactor to Modern Standards": "Refactor this code for production...",
-            "Write Technical Docs": "Generate developer-facing documentation..."
+            "trimWhitespace": false,
+            "embedIssues": true
           },
-          "markdownDescription": "Customize your AI personas.",
-          "scope": "resource"
+          "markdownDescription": "Content transformation.",
+          "additionalProperties": false,
+          "properties": {
+            "trimWhitespace": {
+              "type": "boolean",
+              "default": false,
+              "description": "Remove leading indentation."
+            },
+            "embedIssues": {
+              "type": "boolean",
+              "default": true,
+              "description": "Inject errors as comments."
+            }
+          }
         },
-        "codeBridge.generator.overwriteExisting": {
-          "type": "boolean",
-          "order": 50,
-          "default": false,
-          "markdownDescription": "Force overwrite existing files without confirmation.",
-          "scope": "resource"
+        "codeBridge.analysis.strategy": {
+          "type": "string",
+          "order": 20,
+          "default": "shallow",
+          "markdownDescription": "Dependency discovery method.",
+          "enum": [
+            "none",
+            "shallow",
+            "deep"
+          ],
+          "enumItemLabels": [
+            "Disabled",
+            "Text-Based",
+            "LSP-Based"
+          ]
         },
-        "codeBridge.generator.disableFileSelection": {
+        "codeBridge.analysis.autoExpand": {
           "type": "boolean",
-          "order": 51,
+          "order": 21,
           "default": false,
-          "markdownDescription": "Skip the file selection list and generate everything immediately.",
-          "scope": "resource"
+          "markdownDescription": "Automatically include discovered dependencies."
+        },
+        "codeBridge.analysis.maxFiles": {
+          "type": "number",
+          "order": 22,
+          "default": 5,
+          "minimum": 0,
+          "markdownDescription": "Limit for auto-added files."
+        },
+        "codeBridge.analysis.symbolKinds": {
+          "type": "array",
+          "order": 23,
+          "default": [
+            "class",
+            "function",
+            "interface",
+            "constant"
+          ],
+          "markdownDescription": "Symbols to trace (Deep strategy).",
+          "items": {
+            "type": "string",
+            "enum": [
+              "class",
+              "function",
+              "interface",
+              "constant",
+              "variable",
+              "enum"
+            ]
+          }
+        },
+        "codeBridge.diagnostics.minimumSeverity": {
+          "type": "string",
+          "order": 25,
+          "default": "warning",
+          "markdownDescription": "Filter for included issues.",
+          "enum": [
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "enumItemLabels": [
+            "Critical",
+            "Errors & Warnings",
+            "Info",
+            "All"
+          ]
+        },
+        "codeBridge.diagnostics.contextLines": {
+          "type": "number",
+          "order": 26,
+          "default": 2,
+          "minimum": 0,
+          "markdownDescription": "Lines of context around issues."
+        },
+        "codeBridge.diagnostics.embedStyle": {
+          "type": "string",
+          "order": 27,
+          "default": "compact",
+          "markdownDescription": "Format for inline issues.",
+          "enum": [
+            "compact",
+            "detailed"
+          ],
+          "enumItemLabels": [
+            "Compact",
+            "Detailed"
+          ]
+        },
+        "codeBridge.generator.conflictStrategy": {
+          "type": "string",
+          "order": 30,
+          "default": "ask",
+          "markdownDescription": "Behavior on file conflict.",
+          "enum": [
+            "ask",
+            "overwrite",
+            "skip"
+          ],
+          "enumItemLabels": [
+            "Ask",
+            "Overwrite",
+            "Skip"
+          ]
+        },
+        "codeBridge.generator.filenameWhitelist": {
+          "type": "array",
+          "order": 31,
+          "default": [
+            "package.json",
+            "tsconfig.json",
+            "Dockerfile",
+            "Makefile",
+            ".env",
+            ".gitignore",
+            ".editorconfig",
+            ".prettierrc"
+          ],
+          "markdownDescription": "Allowed non-standard filenames.",
+          "items": {
+            "type": "string"
+          }
         },
         "codeBridge.tree.style": {
           "type": "string",
-          "order": 60,
+          "order": 35,
           "default": "classic",
+          "markdownDescription": "Tree visual style.",
           "enum": [
-            "classic",
             "modern",
+            "classic",
             "minimal",
-            "markdown"
+            "markdown",
+            "json"
           ],
-          "markdownDescription": "Visual style for the directory structure.",
-          "scope": "resource"
+          "enumItemLabels": [
+            "Modern",
+            "Classic",
+            "Minimal",
+            "Markdown",
+            "JSON"
+          ]
         },
         "codeBridge.tree.includeHidden": {
           "type": "boolean",
-          "order": 61,
+          "order": 36,
           "default": false,
-          "markdownDescription": "Include dotfiles (e.g., `.env`) in the tree output.",
-          "scope": "resource"
-        },
-        "codeBridge.tree.maxDepth": {
-          "type": "number",
-          "order": 62,
-          "default": 0,
-          "markdownDescription": "Limit directory depth. `0` = Unlimited.",
-          "scope": "resource"
+          "markdownDescription": "Include dotfiles."
         },
         "codeBridge.tree.directoriesOnly": {
           "type": "boolean",
-          "order": 63,
+          "order": 37,
           "default": false,
-          "markdownDescription": "Hide files, show folder structure only.",
-          "scope": "resource"
+          "markdownDescription": "Show folders only."
         },
-        "codeBridge.exclude": {
-          "type": "array",
+        "codeBridge.tree.maxDepth": {
+          "type": "number",
+          "order": 38,
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "Recursion depth limit."
+        },
+        "codeBridge.safety.maxFileSizeKB": {
+          "type": "number",
           "order": 90,
+          "default": 10240,
+          "minimum": 0,
+          "markdownDescription": "Size limit per file (KB)."
+        },
+        "codeBridge.safety.clipboardWarningKB": {
+          "type": "number",
+          "order": 91,
+          "default": 5120,
+          "minimum": 0,
+          "markdownDescription": "Warn threshold for clipboard size."
+        },
+        "codeBridge.filters.excludes": {
+          "type": "array",
+          "order": 95,
           "default": [
             "node_modules",
             "vendor",
@@ -406,27 +515,37 @@
             "build",
             "out",
             "target",
-            ".next",
-            ".nuxt",
-            ".svelte-kit",
-            ".output",
-            ".cache",
-            ".parcel-cache",
-            ".vite",
-            "__pycache__",
-            ".pytest_cache",
-            ".mypy_cache",
             "coverage",
             ".git",
             ".idea",
-            ".vscode",
-            ".gradle"
+            ".vscode"
           ],
           "items": {
             "type": "string"
           },
-          "markdownDescription": "Glob patterns to exclude from AI context (extends `files.exclude`). Use this for files you want to see in VS Code but hide from the AI.",
-          "scope": "resource"
+          "markdownDescription": "Global ignore patterns."
+        },
+        "codeBridge.filters.binaryExtensions": {
+          "type": "array",
+          "order": 96,
+          "default": [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".ico",
+            ".pdf",
+            ".zip",
+            ".exe",
+            ".dll",
+            ".bin",
+            ".node"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "markdownDescription": "Binary extension list."
         }
       }
     }

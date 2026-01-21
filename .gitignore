@@ -5,3 +5,5 @@ node_modules
 package-lock.json
 .vscode-test-web
 temp
+.vscode-test
+temp/test

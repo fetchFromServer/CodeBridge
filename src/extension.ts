@@ -1,171 +1,168 @@
 import * as vscode from 'vscode'
-import { copyAllContents, selectPrompt } from './features/copyContents'
-import { generateFilesFromLlmOutput } from './features/fileGenerator'
-import { copyProjectTree } from './features/projectTree'
-import { Logger, StatusBarManager } from './utils'
+import { ConfigEngine } from './core/config'
+import { excludesToGlobPattern, Logger, StatusBarManager } from './core/utils'
+import { copyAllContents, selectPrompt } from './features/copy/index'
+import { generateDiagnosticsReport } from './features/diagnostics/index'
+import { generateFilesFromLlmOutput } from './features/generator'
+import { copyProjectTree } from './features/tree'
 
-interface EnabledFeatures {
-  copyContents: boolean
-  copyWithPrompt: boolean
-  generateFiles: boolean
-  projectTree: boolean
+interface CommandBinding {
+  id: string
+  action: 'copy' | 'diagnostics' | 'generate' | 'tree'
+  params?: Record<string, any>
 }
 
-function registerCommandWithConfigCheck(
-  commandId: string,
-  featureKey: keyof EnabledFeatures,
-  callback: (...args: any[]) => any,
-  disabledMessage: string
-): vscode.Disposable {
-  return vscode.commands.registerCommand(commandId, (...args: any[]) => {
-    const config = vscode.workspace.getConfiguration('codeBridge')
-    const features = config.get<EnabledFeatures>('enabledFeatures', {
-      copyContents: true,
-      copyWithPrompt: true,
-      generateFiles: true,
-      projectTree: true,
-    })
+const COMMAND_REGISTRY: CommandBinding[] = [
+  { id: 'extension.copyAllContents', action: 'copy', params: { mode: 'std' } },
+  { id: 'extension.copyWithDiagnostics', action: 'copy', params: { diagnostics: true } },
+  { id: 'extension.copyWithPrompt', action: 'copy', params: { prompt: true, expansion: 'config' } },
+  { id: 'extension.copyDiagnosticsOnly', action: 'diagnostics' },
+  { id: 'extension.generateFromClipboard', action: 'generate' },
+  { id: 'extension.copyProjectTree', action: 'tree' },
+  { id: 'extension.copyProjectTreeFolders', action: 'tree', params: { directoriesOnly: true } },
+  { id: 'extension.copyProjectTreeMarkdown', action: 'tree', params: { style: 'markdown' } },
+  { id: 'extension.copyProjectTreeModern', action: 'tree', params: { style: 'modern' } },
+  { id: 'extension.copyProjectTreeClassic', action: 'tree', params: { style: 'classic' } },
+  { id: 'extension.copyProjectTreeShallow', action: 'tree', params: { maxDepth: 1 } },
+]
 
-    if (!features[featureKey]) {
-      vscode.window.showWarningMessage(disabledMessage)
+interface HandlerContext {
+  logger: Logger
+  statusBar: StatusBarManager
+}
+
+const ACTION_HANDLERS: Record<
+  string,
+  (
+    uri: vscode.Uri | undefined,
+    selected: vscode.Uri[] | undefined,
+    ctx: HandlerContext,
+    params: any,
+  ) => Promise<void>
+> = {
+  copy: async (uri, selected, ctx, params) => {
+    let prompt: string | undefined
+    if (params?.prompt) {
+      prompt = await selectPrompt()
+      if (prompt === undefined) return
+    }
+
+    await copyAllContents(
+      uri,
+      selected,
+      ctx.logger,
+      ctx.statusBar,
+      prompt,
+      params?.diagnostics || false,
+      params?.analysis || 'shallow',
+      params?.expansion || 'off',
+    )
+  },
+
+  diagnostics: async (uri, selected, ctx) => {
+    const uris = await resolveUris(uri, selected)
+    if (uris.length) {
+      await generateDiagnosticsReport(uris, ctx.logger, ctx.statusBar)
+    } else {
+      vscode.window.showWarningMessage('No files found for diagnostics.')
+    }
+  },
+
+  generate: async (uri, _, ctx) => {
+    const clip = await vscode.env.clipboard.readText()
+    const target = uri || vscode.workspace.workspaceFolders?.[0].uri
+
+    if (!target) {
+      vscode.window.showErrorMessage('No target workspace selected.')
       return
     }
-    return callback(...args)
-  })
+
+    if (clip) {
+      await generateFilesFromLlmOutput(clip, target, ctx.logger, ctx.statusBar)
+    } else {
+      vscode.window.showWarningMessage('Clipboard is empty.')
+    }
+  },
+
+  tree: async (uri, _, ctx, params) => {
+    await copyProjectTree(uri, ctx.logger, ctx.statusBar, params || {})
+  },
 }
 
 export function activate(context: vscode.ExtensionContext) {
   const logger = Logger.getInstance()
-  const statusBarManager = StatusBarManager.getInstance()
-  logger.log('CodeBridge extension activated.')
+  const statusBar = StatusBarManager.getInstance()
+  const ctx = { logger, statusBar }
 
-  const updateContextKeys = () => {
-    const config = vscode.workspace.getConfiguration('codeBridge')
-    const features = config.get<EnabledFeatures>('enabledFeatures', {
-      copyContents: true,
-      copyWithPrompt: true,
-      generateFiles: true,
-      projectTree: true,
-    })
+  logger.log('Context Tools activating via Generic Engine...')
 
-    vscode.commands.executeCommand('setContext', 'codeBridge.copyContentsEnabled', features.copyContents)
-    vscode.commands.executeCommand('setContext', 'codeBridge.copyWithPromptEnabled', features.copyWithPrompt)
-    vscode.commands.executeCommand('setContext', 'codeBridge.generateFilesEnabled', features.generateFiles)
-    vscode.commands.executeCommand('setContext', 'codeBridge.projectTreeEnabled', features.projectTree)
-
-    if (features.copyWithPrompt) {
-      statusBarManager.show()
-    } else {
-      statusBarManager.hide()
-    }
-  }
-
-  updateContextKeys()
-
-  const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration('codeBridge.enabledFeatures')) {
-      updateContextKeys()
-      logger.log('CodeBridge enabled features settings updated.')
-    }
+  COMMAND_REGISTRY.forEach((binding) => {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        binding.id,
+        async (uri?: vscode.Uri, selected?: vscode.Uri[]) => {
+          const handler = ACTION_HANDLERS[binding.action]
+          if (handler) {
+            try {
+              await handler(uri, selected, ctx, binding.params)
+            } catch (e) {
+              const message =
+                e instanceof Error
+                  ? e.message || `Command failed: ${binding.id}`
+                  : typeof e === 'string'
+                    ? e
+                    : `Command failed: ${binding.id}`
+              logger.error(`Command execution failed: ${binding.id}`, e)
+              statusBar.update('error', message, 4000)
+              vscode.window.showErrorMessage(message)
+            }
+          }
+        },
+      ),
+    )
   })
 
-  const copyContentsCommand = registerCommandWithConfigCheck(
-    'extension.copyAllContents',
-    'copyContents',
-    (clickedUri?: vscode.Uri, selectedUris?: vscode.Uri[]) =>
-      copyAllContents(clickedUri, selectedUris, logger, statusBarManager, undefined, false, 'shallow', 'off'),
-    'Disabled in settings.'
-  )
-
-  const copyWithDiagnosticsCommand = registerCommandWithConfigCheck(
-    'extension.copyWithDiagnostics',
-    'copyContents',
-    (clickedUri?: vscode.Uri, selectedUris?: vscode.Uri[]) =>
-      copyAllContents(clickedUri, selectedUris, logger, statusBarManager, undefined, true, 'shallow', 'off'),
-    'Disabled in settings.'
-  )
-
-  const copyWithPromptCommand = registerCommandWithConfigCheck(
-    'extension.copyWithPrompt',
-    'copyWithPrompt',
-    async (clickedUri?: vscode.Uri, selectedUris?: vscode.Uri[]) => {
-      const prompt = await selectPrompt()
-      if (prompt === undefined) return
-
-      await copyAllContents(clickedUri, selectedUris, logger, statusBarManager, prompt, false, 'shallow', 'config')
-    },
-    'Copy with Prompt command is disabled. Enable it in settings.'
-  )
-
-  const copyWithDeepAnalysisCommand = registerCommandWithConfigCheck(
-    'extension.copyWithDeepAnalysis',
-    'copyContents',
-    async (clickedUri?: vscode.Uri, selectedUris?: vscode.Uri[]) => {
-      await copyAllContents(clickedUri, selectedUris, logger, statusBarManager, undefined, false, 'deep', 'force')
-    },
-    'Disabled in settings.'
-  )
-
-  const generateFromClipboardCommand = registerCommandWithConfigCheck(
-    'extension.generateFromClipboard',
-    'generateFiles',
-    async (targetDirectoryUri?: vscode.Uri) => {
-      let targetUri = targetDirectoryUri
-      if (!targetUri) {
-        if (vscode.workspace.workspaceFolders?.length) {
-          targetUri = vscode.workspace.workspaceFolders[0].uri
-        } else {
-          vscode.window.showErrorMessage('No target folder found.')
-          return
-        }
-      }
-      const clipboardContent = await vscode.env.clipboard.readText()
-      if (!clipboardContent.trim()) {
-        vscode.window.showWarningMessage('Clipboard is empty.')
-        return
-      }
-      await generateFilesFromLlmOutput(clipboardContent, targetUri, logger, statusBarManager)
-    },
-    'Generate Files command is disabled. Enable it in settings.'
-  )
-
-  const projectTreeCommand = registerCommandWithConfigCheck(
-    'extension.copyProjectTree',
-    'projectTree',
-    (uri?: vscode.Uri) => copyProjectTree(uri, logger, statusBarManager, {}),
-    'Copy Project Tree command is disabled. Enable it in settings.'
-  )
-
-  const projectTreeFoldersCommand = registerCommandWithConfigCheck(
-    'extension.copyProjectTreeFolders',
-    'projectTree',
-    (uri?: vscode.Uri) => copyProjectTree(uri, logger, statusBarManager, { directoriesOnly: true }),
-    'Copy Project Tree command is disabled. Enable it in settings.'
-  )
-
-  const projectTreeShallowCommand = registerCommandWithConfigCheck(
-    'extension.copyProjectTreeShallow',
-    'projectTree',
-    (uri?: vscode.Uri) => copyProjectTree(uri, logger, statusBarManager, { maxDepth: 1 }),
-    'Copy Project Tree command is disabled. Enable it in settings.'
-  )
-
-  context.subscriptions.push(
-    copyContentsCommand,
-    copyWithDiagnosticsCommand,
-    copyWithPromptCommand,
-    copyWithDeepAnalysisCommand,
-    generateFromClipboardCommand,
-    projectTreeCommand,
-    projectTreeFoldersCommand,
-    projectTreeShallowCommand,
-    statusBarManager,
-    configWatcher
-  )
+  context.subscriptions.push(statusBar)
 }
 
 export function deactivate() {
-  const logger = Logger.getInstance()
   StatusBarManager.getInstance().dispose()
-  logger.log('CodeBridge extension deactivated.')
+}
+
+async function resolveUris(
+  clicked: vscode.Uri | undefined,
+  selected: vscode.Uri[] | undefined,
+): Promise<vscode.Uri[]> {
+  const roots = selected?.length
+    ? selected
+    : clicked
+      ? [clicked]
+      : vscode.window.activeTextEditor
+        ? [vscode.window.activeTextEditor.document.uri]
+        : []
+
+  if (!roots.length) return []
+
+  const finalUris: vscode.Uri[] = []
+
+  const config = ConfigEngine.get('global')
+  const excludeGlob = excludesToGlobPattern(config.excludePatterns)
+
+  for (const root of roots) {
+    try {
+      const stat = await vscode.workspace.fs.stat(root)
+      if (stat.type === vscode.FileType.Directory) {
+        const files = await vscode.workspace.findFiles(
+          new vscode.RelativePattern(root, '**/*'),
+          excludeGlob,
+        )
+        finalUris.push(...files)
+      } else {
+        finalUris.push(root)
+      }
+    } catch {
+      finalUris.push(root)
+    }
+  }
+  return finalUris
 }
