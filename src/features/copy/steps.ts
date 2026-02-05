@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 import { DynamicConfig } from '../../core/config'
-import { StatusBarManager, excludesToGlobPattern } from '../../core/utils'
+import { collectFileUrisByFs, StatusBarManager } from '../../core/utils'
 import { IWorkflowStep, WorkflowContext } from '../../core/workflow'
 import { ContextManager } from '../analysis/index'
 import { FileContent, FileProcessor } from './processing/FileProcessor'
@@ -46,7 +46,6 @@ export class ContextExpansionStep implements IWorkflowStep<CopyWorkflowContext> 
       ctx.statusBar.update('working', msg),
     )
 
-    const excludeGlob = excludesToGlobPattern(ctx.config.excludePatterns)
     const seen = new Set<string>()
     const targets: vscode.Uri[] = []
 
@@ -56,10 +55,10 @@ export class ContextExpansionStep implements IWorkflowStep<CopyWorkflowContext> 
       try {
         const stat = await vscode.workspace.fs.stat(uri)
         if (stat.type === vscode.FileType.Directory) {
-          const children = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(uri, '**/*'),
-            excludeGlob,
-          )
+          const children = await collectFileUrisByFs(uri, {
+            includeHidden: true,
+            excludePatterns: ctx.config.excludePatterns || [],
+          })
           for (const c of children) {
             if (!seen.has(c.toString())) {
               seen.add(c.toString())

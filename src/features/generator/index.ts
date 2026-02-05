@@ -23,7 +23,11 @@ export async function generateFilesFromLlmOutput(
     filenameWhitelist: configData.filenameWhitelist || [],
   }
 
-  const parsed = parseLlmOutput(output, { filenameWhitelist: configData.filenameWhitelist })
+  const parsed = parseLlmOutput(output, {
+    filenameWhitelist: configData.filenameWhitelist,
+    pathDetection: configData.pathDetection,
+    pathMarkers: configData.pathMarkers,
+  })
 
   if (!parsed.length) {
     vscode.window.showWarningMessage('No blocks found.')

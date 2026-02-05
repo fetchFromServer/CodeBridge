@@ -178,3 +178,56 @@ export function isIgnored(relativePath: string, patterns: string[]): boolean {
   }
   return false
 }
+
+export interface FsCollectOptions {
+  includeHidden?: boolean
+  excludePatterns?: string[]
+}
+
+export async function collectFileUrisByFs(
+  rootUri: vscode.Uri,
+  options: FsCollectOptions = {},
+  token?: vscode.CancellationToken,
+): Promise<vscode.Uri[]> {
+  const out: vscode.Uri[] = []
+  await walkDirectory(rootUri, '', options, token, out)
+  return out
+}
+
+async function walkDirectory(
+  dirUri: vscode.Uri,
+  relPath: string,
+  options: FsCollectOptions,
+  token: vscode.CancellationToken | undefined,
+  out: vscode.Uri[],
+): Promise<void> {
+  if (token?.isCancellationRequested) return
+
+  let entries: [string, vscode.FileType][] = []
+  try {
+    entries = await vscode.workspace.fs.readDirectory(dirUri)
+  } catch {
+    return
+  }
+
+  const includeHidden = options.includeHidden ?? true
+  const excludePatterns = options.excludePatterns || []
+
+  for (const [name, type] of entries) {
+    if (!includeHidden && name.startsWith('.')) continue
+
+    const childRel = relPath ? `${relPath}/${name}` : name
+    if (excludePatterns.length && isIgnored(childRel, excludePatterns)) continue
+
+    const childUri = vscode.Uri.joinPath(dirUri, name)
+
+    if (type & vscode.FileType.Directory) {
+      await walkDirectory(childUri, childRel, options, token, out)
+      continue
+    }
+
+    if (type & vscode.FileType.File) {
+      out.push(childUri)
+    }
+  }
+}

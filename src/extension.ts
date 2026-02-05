@@ -1,6 +1,5 @@
 import * as vscode from 'vscode'
-import { ConfigEngine } from './core/config'
-import { excludesToGlobPattern, Logger, StatusBarManager } from './core/utils'
+import { collectFileUrisByFs, Logger, StatusBarManager } from './core/utils'
 import { copyAllContents, selectPrompt } from './features/copy/index'
 import { generateDiagnosticsReport } from './features/diagnostics/index'
 import { generateFilesFromLlmOutput } from './features/generator'
@@ -145,17 +144,11 @@ async function resolveUris(
 
   const finalUris: vscode.Uri[] = []
 
-  const config = ConfigEngine.get('global')
-  const excludeGlob = excludesToGlobPattern(config.excludePatterns)
-
   for (const root of roots) {
     try {
       const stat = await vscode.workspace.fs.stat(root)
       if (stat.type === vscode.FileType.Directory) {
-        const files = await vscode.workspace.findFiles(
-          new vscode.RelativePattern(root, '**/*'),
-          excludeGlob,
-        )
+        const files = await collectFileUrisByFs(root, { includeHidden: true })
         finalUris.push(...files)
       } else {
         finalUris.push(root)

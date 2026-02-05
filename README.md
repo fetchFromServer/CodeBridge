@@ -18,7 +18,7 @@ A collection of utilities to bridge the gap between your codebase and external t
 
 Right-click any file or folder in the Explorer:
 
-- **Copy with Context**: Formats selection with Markdown fences and headers.
+- **Copy Context**: Formats selection with Markdown fences and headers.
 - **Copy with Template...**: Prepend a custom instruction (e.g., "Code Review", "Documentation").
 - **Bundle Dependencies**: Scans imports and includes relevant files automatically.
 

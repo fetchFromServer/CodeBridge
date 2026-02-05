@@ -1,12 +1,6 @@
 import * as vscode from 'vscode'
 import { ConfigEngine } from '../../core/config'
-import {
-  Logger,
-  StatusBarManager,
-  excludesToGlobPattern,
-  isIgnored,
-  posixPath,
-} from '../../core/utils'
+import { collectFileUrisByFs, Logger, posixPath, StatusBarManager } from '../../core/utils'
 
 interface Node {
   name: string
@@ -136,63 +130,15 @@ async function collectTreeUris(
   token: vscode.CancellationToken,
   logger: Logger,
 ): Promise<vscode.Uri[]> {
-  const excludeGlob = excludesToGlobPattern(config.excludePatterns)
-
   try {
-    return await vscode.workspace.findFiles(
-      new vscode.RelativePattern(rootUri, '**/*'),
-      excludeGlob,
-      undefined,
+    return await collectFileUrisByFs(
+      rootUri,
+      { includeHidden: Boolean(config.includeHidden), excludePatterns: config.excludePatterns },
       token,
     )
   } catch (e) {
-    logger.error('findFiles failed, falling back to fs traversal', e)
-    return collectTreeUrisByFs(rootUri, config, token)
-  }
-}
-
-async function collectTreeUrisByFs(
-  rootUri: vscode.Uri,
-  config: any,
-  token: vscode.CancellationToken,
-): Promise<vscode.Uri[]> {
-  const out: vscode.Uri[] = []
-  await walkDirectory(rootUri, '', config, token, out)
-  return out
-}
-
-async function walkDirectory(
-  dirUri: vscode.Uri,
-  relPath: string,
-  config: any,
-  token: vscode.CancellationToken,
-  out: vscode.Uri[],
-): Promise<void> {
-  if (token?.isCancellationRequested) return
-
-  let entries: [string, vscode.FileType][] = []
-  try {
-    entries = await vscode.workspace.fs.readDirectory(dirUri)
-  } catch {
-    return
-  }
-
-  for (const [name, type] of entries) {
-    if (!config.includeHidden && name.startsWith('.')) continue
-
-    const childRel = relPath ? `${relPath}/${name}` : name
-    if (isIgnored(childRel, config.excludePatterns || [])) continue
-
-    const childUri = vscode.Uri.joinPath(dirUri, name)
-
-    if (type & vscode.FileType.Directory) {
-      await walkDirectory(childUri, childRel, config, token, out)
-      continue
-    }
-
-    if (type & vscode.FileType.File) {
-      out.push(childUri)
-    }
+    logger.error('FS traversal failed while generating tree', e)
+    return []
   }
 }
 

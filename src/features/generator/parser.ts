@@ -2,6 +2,8 @@ import { posixPath } from '../../core/utils'
 import { FileData } from './types'
 
 const PATH_REGEX = /[\w\-\.\/]+\.\w+/
+const DEFAULT_MARKERS = ['file:', 'path:']
+type PathDetectionMode = 'auto' | 'marked'
 
 const LANG_MAP: Record<string, string> = {
   js: '.js',
@@ -78,15 +80,38 @@ function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function findMarkedPath(line: string, markers: string[]): string {
+  if (!markers.length) return ''
+  for (const marker of markers) {
+    const pattern = new RegExp(`(^|\\s)${escapeRegex(marker)}\\s*`, 'i')
+    const match = line.match(pattern)
+    if (!match || match.index === undefined) continue
+
+    const after = line.slice(match.index + match[0].length).trim()
+    const pathMatch = after.match(PATH_REGEX)
+    if (pathMatch?.[0]) return pathMatch[0]
+  }
+  return ''
+}
+
 export function parseLlmOutput(
   llmOutput: string,
-  opts?: { filenameWhitelist?: string[] },
+  opts?: {
+    filenameWhitelist?: string[]
+    pathDetection?: PathDetectionMode
+    pathMarkers?: string[]
+  },
 ): FileData[] {
   const lines = llmOutput.split(/\r?\n/)
   const blocks = extractCodeBlocks(lines)
   const files: FileData[] = []
-  const usedNames = new Set<string>()
+  const filesByPath = new Map<string, FileData>()
+  const order: string[] = []
   const whitelist = (opts?.filenameWhitelist || []).map((v) => v.trim()).filter(Boolean)
+  const detection = (opts?.pathDetection || 'auto') as PathDetectionMode
+  const markers = (opts?.pathMarkers?.length ? opts.pathMarkers : DEFAULT_MARKERS)
+    .map((v) => v.trim())
+    .filter(Boolean)
 
   blocks.forEach((block, index) => {
     const contextLines = [
@@ -99,6 +124,14 @@ export function parseLlmOutput(
 
     for (const line of contextLines) {
       const cleanLine = line.replace(/^[#\*\->\s\/]+/, '').trim()
+
+      const marked = findMarkedPath(cleanLine, markers)
+      if (marked) {
+        filePath = marked
+        break
+      }
+
+      if (detection === 'marked') continue
 
       const match = cleanLine.match(PATH_REGEX)
       if (match) {
@@ -139,22 +172,19 @@ export function parseLlmOutput(
 
     filePath = filePath.replace(/^['"`]+|['"`]+$/g, '')
 
-    let uniqueName = posixPath.normalize(filePath)
-    let counter = 1
+    const normalized = posixPath.normalize(filePath)
 
-    while (usedNames.has(uniqueName)) {
-      const parts = uniqueName.lastIndexOf('.')
-      if (parts > -1) {
-        uniqueName = `${uniqueName.substring(0, parts)}_${counter}${uniqueName.substring(parts)}`
-      } else {
-        uniqueName = `${uniqueName}_${counter}`
-      }
-      counter++
+    if (!filesByPath.has(normalized)) {
+      order.push(normalized)
     }
 
-    usedNames.add(uniqueName)
-    files.push({ filePath: uniqueName, content: block.content })
+    filesByPath.set(normalized, { filePath: normalized, content: block.content })
   })
+
+  for (const key of order) {
+    const data = filesByPath.get(key)
+    if (data) files.push(data)
+  }
 
   return files
 }

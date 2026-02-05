@@ -2,7 +2,7 @@
   "name": "codebridge",
   "displayName": "CodeBridge: Context & File Utils",
   "description": "Smart clipboard utilities. Copy code with context, visualize folder structures, and scaffold files from text blocks.",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "publisher": "fetchFromServer",
   "icon": "images/icon.png",
   "repository": {
@@ -16,12 +16,14 @@
   "keywords": [
     "context",
     "copy code",
-    "markdown",
-    "scaffolding",
-    "productivity",
     "clipboard",
     "documentation",
-    "project tree"
+    "project tree",
+    "developer tool",
+    "code snippets",
+    "workspace helper",
+    "tree explorer",
+    "productivity"
   ],
   "categories": [
     "Other",
@@ -39,6 +41,10 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "galleryBanner": {
+    "color": "#0a66c2",
+    "theme": "dark"
+  },
   "scripts": {
     "vscode:prepublish": "npm run package",
     "compile": "npm-run-all --parallel compile:desktop compile:web",
@@ -67,7 +73,7 @@
     "commands": [
       {
         "command": "extension.copyAllContents",
-        "title": "Copy with Context",
+        "title": "Copy Context",
         "icon": "$(copy)",
         "category": "CodeBridge"
       },
@@ -85,7 +91,7 @@
       },
       {
         "command": "extension.copyDiagnosticsOnly",
-        "title": "Copy Problems Report",
+        "title": "Copy Problems",
         "icon": "$(error)",
         "category": "CodeBridge"
       },
@@ -147,16 +153,17 @@
           "when": "filesExplorerFocus"
         },
         {
-          "submenu": "codebridge.copyOptions",
+          "command": "extension.copyDiagnosticsOnly",
           "group": "1_cutcopypaste@2",
+          "when": "filesExplorerFocus"
+        },
+        {
+          "submenu": "codebridge.copyOptions",
+          "group": "1_cutcopypaste@3",
           "when": "filesExplorerFocus"
         }
       ],
       "codebridge.copyOptions": [
-        {
-          "command": "extension.copyDiagnosticsOnly",
-          "group": "1_problems@1"
-        },
         {
           "command": "extension.copyWithDiagnostics",
           "group": "1_problems@2"
@@ -446,6 +453,35 @@
             ".prettierrc"
           ],
           "markdownDescription": "Allowed non-standard filenames.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "codeBridge.generator.pathDetection": {
+          "type": "string",
+          "order": 32,
+          "default": "auto",
+          "markdownDescription": "How file paths are detected in clipboard input.",
+          "enum": [
+            "auto",
+            "marked"
+          ],
+          "enumItemLabels": [
+            "Auto",
+            "Marked Only"
+          ]
+        },
+        "codeBridge.generator.pathMarkers": {
+          "type": "array",
+          "order": 33,
+          "default": [
+            "file:",
+            "path:",
+            "filepath:",
+            "filePath:",
+            "filename:"
+          ],
+          "markdownDescription": "Markers that must precede a file path when pathDetection is set to 'marked'. Example: file: src/app.ts",
           "items": {
             "type": "string"
           }
